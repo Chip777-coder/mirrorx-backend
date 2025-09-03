@@ -1,18 +1,13 @@
 import os
 from datetime import datetime
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import pandas as pd
 
 APP_NAME = "MirrorX Backend"
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "mock_data"))
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 
-app = Flask(
-    __name__,
-    static_folder=FRONTEND_DIR,
-    static_url_path=""
-)
+app = Flask(__name__)
 CORS(app)
 
 def read_csv_safe(path):
@@ -23,40 +18,39 @@ def read_csv_safe(path):
     except Exception:
         return pd.DataFrame()
 
-# ✅ Serve React frontend at root path and any undefined routes
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve_frontend(path):
-    file_path = os.path.join(FRONTEND_DIR, path)
-    if path != "" and os.path.exists(file_path):
-        return send_from_directory(FRONTEND_DIR, path)
-    else:
-        return send_from_directory(FRONTEND_DIR, "index.html")
+# ✅ Clean root route (homepage)
+@app.route("/", methods=["GET"])
+def root():
+    return jsonify({
+        "message": "👋 Welcome to MirrorX API!",
+        "status": "live",
+        "routes": ["/status", "/score-history", "/live-score", "/scores", "/run-job"]
+    })
 
-# ✅ Health check route (JSON-based, separate from frontend)
+# ✅ Health check route
 @app.route("/status", methods=["GET"])
 def status():
     return jsonify({"status": "MirrorX backend is live."})
 
-# ✅ API route to simulate triggering a job
+# ✅ Simulated job trigger
 @app.route("/run-job", methods=["POST"])
 def run_job():
     now = datetime.utcnow().isoformat() + "Z"
     return jsonify({"message": "Scoring job triggered", "timestamp": now}), 200
 
-# ✅ Returns score history from CSV
+# ✅ Score history
 @app.route("/score-history", methods=["GET"])
 def score_history():
     df = read_csv_safe(os.path.join(DATA_DIR, "score_history.csv"))
     return jsonify({"data": df.to_dict(orient="records")}), 200
 
-# ✅ Returns live score data from CSV
+# ✅ Live score
 @app.route("/live-score", methods=["GET"])
 def live_score():
     df = read_csv_safe(os.path.join(DATA_DIR, "live_score.csv"))
     return jsonify({"data": df.to_dict(orient="records")}), 200
 
-# ✅ Merged score endpoint with logic
+# ✅ Combined scores endpoint
 @app.route("/scores", methods=["GET"])
 def scores():
     hist = read_csv_safe(os.path.join(DATA_DIR, "score_history.csv"))
