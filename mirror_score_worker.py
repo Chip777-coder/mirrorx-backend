@@ -1,0 +1,1 @@
+# Placeholder content for backend file: mirror_score_worker.py
