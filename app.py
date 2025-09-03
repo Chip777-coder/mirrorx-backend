@@ -19,6 +19,7 @@ def read_csv_safe(path):
     except Exception:
         return pd.DataFrame()
 
+# ✅ Serve the React frontend
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_frontend(path):
@@ -27,21 +28,30 @@ def serve_frontend(path):
     else:
         return send_from_directory(FRONTEND_DIR, "index.html")
 
+# ✅ Health check route (no conflict)
+@app.route("/status", methods=["GET"])
+def status():
+    return jsonify({"status": "MirrorX backend is live."})
+
+# ✅ API route to simulate triggering a job
 @app.route("/run-job", methods=["POST"])
 def run_job():
     now = datetime.utcnow().isoformat() + "Z"
     return jsonify({"message": "Scoring job triggered", "timestamp": now}), 200
 
+# ✅ Returns score history from CSV
 @app.route("/score-history", methods=["GET"])
 def score_history():
     df = read_csv_safe(os.path.join(DATA_DIR, "score_history.csv"))
     return jsonify({"data": df.to_dict(orient="records")}), 200
 
+# ✅ Returns live score data from CSV
 @app.route("/live-score", methods=["GET"])
 def live_score():
     df = read_csv_safe(os.path.join(DATA_DIR, "live_score.csv"))
     return jsonify({"data": df.to_dict(orient="records")}), 200
 
+# ✅ Merged score endpoint with logic
 @app.route("/scores", methods=["GET"])
 def scores():
     hist = read_csv_safe(os.path.join(DATA_DIR, "score_history.csv"))
@@ -56,11 +66,12 @@ def scores():
         l["last_updated"] = l["timestamp"]
         frames.append(l[["user_id", "score_type", "score_value", "last_updated"]])
     if not frames:
-        merged = pd.DataFrame(columns=["user_id","score_type","score_value","last_updated"])
+        merged = pd.DataFrame(columns=["user_id", "score_type", "score_value", "last_updated"])
     else:
         merged = pd.concat(frames, ignore_index=True)
         merged = merged.sort_values("last_updated").groupby("user_id", as_index=False).tail(1)
     return jsonify({"data": merged.to_dict(orient="records")}), 200
 
+# ✅ Start app
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
