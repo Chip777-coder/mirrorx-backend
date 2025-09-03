@@ -8,7 +8,11 @@ APP_NAME = "MirrorX Backend"
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "mock_data"))
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 
-app = Flask(__name__, static_folder=FRONTEND_DIR)
+app = Flask(
+    __name__,
+    static_folder=FRONTEND_DIR,
+    static_url_path=""
+)
 CORS(app)
 
 def read_csv_safe(path):
@@ -19,16 +23,17 @@ def read_csv_safe(path):
     except Exception:
         return pd.DataFrame()
 
-# ✅ Serve the React frontend
+# ✅ Serve React frontend at root path and any undefined routes
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_frontend(path):
-    if path != "" and os.path.exists(os.path.join(FRONTEND_DIR, path)):
+    file_path = os.path.join(FRONTEND_DIR, path)
+    if path != "" and os.path.exists(file_path):
         return send_from_directory(FRONTEND_DIR, path)
     else:
         return send_from_directory(FRONTEND_DIR, "index.html")
 
-# ✅ Health check route (no conflict)
+# ✅ Health check route (JSON-based, separate from frontend)
 @app.route("/status", methods=["GET"])
 def status():
     return jsonify({"status": "MirrorX backend is live."})
