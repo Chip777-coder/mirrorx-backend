@@ -1,15 +1,1 @@
-{
-    "rpcs": [
-        "https://api.mainnet-beta.solana.com?fallback=0",
-        "https://solana-mainnet.rpcpool.com?fallback=0",
-        "https://mainnet.helius-rpc.com?fallback=0",
-        "https://rpc.ankr.com/solana",
-        "https://solana-api.projectserum.com",
-        "https://api.metaplex.solana.com",
-        "https://solana.rpcpool.com",
-        "https://solana.public-rpc.com",
-        "https://rpc.hellomoon.io",
-        "https://rpc.shyft.to",
-        "https://rpc.blockvision.org/solana/mainnet"
-    ]
-}
+["https://api.mainnet-beta.solana.com?fallback=0", "https://solana-mainnet.rpcpool.com?fallback=0"]

@@ -1,0 +1,2 @@
+user_id,timestamp,score_type,score_value,category,match_id
+1,2024-09-06T18:00:00Z,accuracy,87,football,match123
