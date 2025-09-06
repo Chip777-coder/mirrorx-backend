@@ -1,6 +1,5 @@
 from flask import Flask, jsonify
 import json
-import os
 import time
 import requests
 
@@ -13,7 +12,7 @@ def home():
 @app.route("/rpc-list", methods=["GET"])
 def rpc_list():
     try:
-        with open("rpc_list.json", "r") as f:
+        with open("rpcs/rpc_list.json", "r") as f:
             data = json.load(f)
         return jsonify({"rpcs": data})
     except FileNotFoundError as e:
@@ -22,7 +21,7 @@ def rpc_list():
 @app.route("/rpc-test", methods=["GET"])
 def rpc_test():
     try:
-        with open("rpc_list.json", "r") as f:
+        with open("rpcs/rpc_list.json", "r") as f:
             rpc_urls = json.load(f)
     except Exception as e:
         return jsonify({"error": "Failed to load rpc_list.json", "details": str(e)}), 500
