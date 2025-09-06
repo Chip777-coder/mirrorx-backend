@@ -22,7 +22,8 @@ def rpc_list():
 def rpc_test():
     try:
         with open("rpcs/rpc_list.json", "r") as f:
-            rpc_urls = json.load(f)
+            data = json.load(f)
+            rpc_urls = data.get("rpcs", [])  # ✅ FIXED: Grab the actual list
     except Exception as e:
         return jsonify({"error": "Failed to load rpc_list.json", "details": str(e)}), 500
 
@@ -30,7 +31,7 @@ def rpc_test():
     for url in rpc_urls:
         start = time.time()
         try:
-            response = requests.post(url, json={"jsonrpc":"2.0","id":1,"method":"getHealth"})
+            response = requests.post(url, json={"jsonrpc": "2.0", "id": 1, "method": "getHealth"})
             duration = int((time.time() - start) * 1000)
             results.append({
                 "url": url,
