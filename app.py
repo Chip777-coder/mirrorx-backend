@@ -1,4 +1,3 @@
-
 from flask import Flask, jsonify
 import json
 import os
@@ -12,10 +11,12 @@ def home():
 @app.route('/rpc-list', methods=['GET'])
 def rpc_list():
     try:
-        with open('rpc_list.json', 'r') as f:  # ← no subfolder
+        filepath = os.path.join('rpcs', 'rpc_list.json')  # ✅ correct subfolder path
+        with open(filepath, 'r') as f:
             data = json.load(f)
         return jsonify({'rpcs': data})
     except FileNotFoundError as e:
         return jsonify({'error': 'RPC list fetch failed', 'details': str(e)}), 500
+
 if __name__ == "__main__":
     app.run()
