@@ -1,3 +1,4 @@
+from routes.rpc_status import real_rpc_status
 from flask import Flask, jsonify
 import requests
 import json
