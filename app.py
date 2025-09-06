@@ -1,13 +1,15 @@
 from flask import Flask, jsonify
 import requests
 import json
+import os
 
 app = Flask(__name__)
 
-# Load the real RPCs from the correct folder path
+# 🛠 Use portable path to ensure it always works, even on Render or GitHub
 try:
-    with open("rpcs/rpc_list.json", "r") as f:
-        rpc_list = json.load(f)
+    rpc_list_path = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
+    with open(rpc_list_path, "r") as f:
+        rpc_list = json.load(f)["rpcs"]  # 💡 make sure we access the actual list under "rpcs"
 except Exception as e:
     rpc_list = []
     print("Failed to load rpc_list.json:", e)
