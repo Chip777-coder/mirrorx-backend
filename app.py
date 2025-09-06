@@ -60,6 +60,3 @@ def real_rpc_status():
             })
 
     return jsonify(results)
-            })
-
-    return jsonify(results)
