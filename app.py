@@ -1,29 +1,17 @@
 from flask import Flask, jsonify
 import json
-import time
 import requests
+import time
+import os
 
 app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "MirrorX Backend is Live"
-
-@app.route("/rpc-list", methods=["GET"])
-def rpc_list():
-    try:
-        with open("rpcs/rpc_list.json", "r") as f:
-            data = json.load(f)
-        return jsonify({"rpcs": data})
-    except FileNotFoundError as e:
-        return jsonify({"error": "RPC list fetch failed", "details": str(e)}), 500
 
 @app.route("/rpc-test", methods=["GET"])
 def rpc_test():
     try:
-        with open("rpcs/rpc_list.json", "r") as f:
-            data = json.load(f)
-            rpc_urls = data.get("rpcs", [])  # ✅ FIXED: Grab the actual list
+        with open(os.path.join("rpcs", "rpc_list.json"), "r") as f:
+            rpc_data = json.load(f)
+            rpc_urls = rpc_data.get("rpcs", [])
     except Exception as e:
         return jsonify({"error": "Failed to load rpc_list.json", "details": str(e)}), 500
 
@@ -31,7 +19,7 @@ def rpc_test():
     for url in rpc_urls:
         start = time.time()
         try:
-            response = requests.post(url, json={"jsonrpc": "2.0", "id": 1, "method": "getHealth"})
+            response = requests.post(url, json={"jsonrpc":"2.0","id":1,"method":"getHealth"})
             duration = int((time.time() - start) * 1000)
             results.append({
                 "url": url,
@@ -51,3 +39,6 @@ def rpc_test():
             })
 
     return jsonify({"results": results})
+
+if __name__ == "__main__":
+    app.run(debug=True)
