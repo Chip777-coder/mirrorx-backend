@@ -1,4 +1,2 @@
 flask
-pandas
-flask-cors
-gunicorn
+requests

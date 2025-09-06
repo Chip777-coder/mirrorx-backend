@@ -1,70 +1,71 @@
-import os
-from datetime import datetime
-from flask import Flask, jsonify, request, send_from_directory
-from flask_cors import CORS
-import pandas as pd
+from flask import Flask, jsonify
+import requests
+import random
+import time
 
-APP_NAME = "MirrorX Backend"
-DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "mock_data"))
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+app = Flask(__name__)
 
-app = Flask(__name__, static_folder=FRONTEND_DIR)
-CORS(app)
+# Preloaded list of diverse and globally distributed public Solana RPCs (examples, more can be added)
+RPC_LIST = [
+    "https://api.mainnet-beta.solana.com",
+    "https://solana-api.projectserum.com",
+    "https://solana-mainnet.g.alchemy.com/v2/demo",
+    "https://rpc.ankr.com/solana",
+    "https://rpc.helius.xyz",
+    "https://solana.public-rpc.com",
+    "https://api.metaplex.solana.com",
+    "https://rpc.shyft.to",
+    "https://rpc.liftbridge.app",
+    "https://rpc.triton.one",
+    "https://solana-api.syndica.io/access-token/demo",
+    "https://rpc-mainnet-fork.epochs.dev",
+    "https://rpc1.mainnet.solana.allthatnode.com",
+    "https://rpc2.mainnet.solana.allthatnode.com",
+    "https://mainnet.rpcpool.com"
+]
 
-def read_csv_safe(path):
-    if not os.path.exists(path):
-        return pd.DataFrame()
+def is_rpc_alive(rpc_url):
     try:
-        return pd.read_csv(path)
+        start = time.time()
+        response = requests.post(rpc_url, json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getHealth"
+        }, timeout=3)
+        latency = round((time.time() - start) * 1000, 2)
+        if response.status_code == 200 and response.json().get("result") == "ok":
+            return True, latency
     except Exception:
-        return pd.DataFrame()
+        pass
+    return False, None
 
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve_frontend(path):
-    if path != "" and os.path.exists(os.path.join(FRONTEND_DIR, path)):
-        return send_from_directory(FRONTEND_DIR, path)
-    else:
-        return send_from_directory(FRONTEND_DIR, "index.html")
+def get_best_rpc():
+    healthy_rpcs = []
+    for rpc in RPC_LIST:
+        healthy, latency = is_rpc_alive(rpc)
+        if healthy:
+            healthy_rpcs.append((rpc, latency))
+    healthy_rpcs.sort(key=lambda x: x[1])  # sort by latency
+    return healthy_rpcs[0][0] if healthy_rpcs else None
 
-@app.route("/status", methods=["GET"])
-def status():
-    return jsonify({"status": "MirrorX backend is live."})
+@app.route('/rpc-status')
+def rpc_status():
+    working_rpcs = []
+    for rpc in RPC_LIST:
+        alive, latency = is_rpc_alive(rpc)
+        working_rpcs.append({
+            "rpc": rpc,
+            "alive": alive,
+            "latency_ms": latency if latency else "N/A"
+        })
+    return jsonify({"rpc_status": working_rpcs})
 
-@app.route("/run-job", methods=["POST"])
-def run_job():
-    now = datetime.utcnow().isoformat() + "Z"
-    return jsonify({"message": "Scoring job triggered", "timestamp": now}), 200
+@app.route('/get-best-rpc')
+def best_rpc():
+    best = get_best_rpc()
+    if best:
+        return jsonify({"best_rpc": best})
+    return jsonify({"error": "No RPCs available"}), 503
 
-@app.route("/score-history", methods=["GET"])
-def score_history():
-    df = read_csv_safe(os.path.join(DATA_DIR, "score_history.csv"))
-    return jsonify({"data": df.to_dict(orient="records")}), 200
-
-@app.route("/live-score", methods=["GET"])
-def live_score():
-    df = read_csv_safe(os.path.join(DATA_DIR, "live_score.csv"))
-    return jsonify({"data": df.to_dict(orient="records")}), 200
-
-@app.route("/scores", methods=["GET"])
-def scores():
-    hist = read_csv_safe(os.path.join(DATA_DIR, "score_history.csv"))
-    live = read_csv_safe(os.path.join(DATA_DIR, "live_score.csv"))
-    frames = []
-    if not hist.empty:
-        h = hist.copy()
-        h["last_updated"] = h["timestamp"]
-        frames.append(h[["user_id", "score_type", "score_value", "last_updated"]])
-    if not live.empty:
-        l = live.copy()
-        l["last_updated"] = l["timestamp"]
-        frames.append(l[["user_id", "score_type", "score_value", "last_updated"]])
-    if not frames:
-        merged = pd.DataFrame(columns=["user_id", "score_type", "score_value", "last_updated"])
-    else:
-        merged = pd.concat(frames, ignore_index=True)
-        merged = merged.sort_values("last_updated").groupby("user_id", as_index=False).tail(1)
-    return jsonify({"data": merged.to_dict(orient="records")}), 200
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+if __name__ == '__main__':
+    app.run(debug=True)
