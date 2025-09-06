@@ -1,44 +1,38 @@
 from flask import Flask, jsonify
-import json
-import requests
-import time
-import os
+import json, os, requests, time
 
 app = Flask(__name__)
 
-@app.route("/rpc-test", methods=["GET"])
-def rpc_test():
+RPC_JSON_PATH = os.path.join("rpcs", "rpc_list.json")
+
+@app.route("/")
+def index():
+    return jsonify(message="MirrorX Backend is Live. Use /rpc-list or /rpc-test")
+
+@app.route("/rpc-list")
+def get_rpc_list():
     try:
-        with open(os.path.join("rpcs", "rpc_list.json"), "r") as f:
-            rpc_data = json.load(f)
-            rpc_urls = rpc_data.get("rpcs", [])
+        with open(RPC_JSON_PATH, "r") as file:
+            data = json.load(file)
+        return jsonify(data)
     except Exception as e:
-        return jsonify({"error": "Failed to load rpc_list.json", "details": str(e)}), 500
+        return jsonify(error="RPC list fetch failed", details=str(e)), 500
 
-    results = []
-    for url in rpc_urls:
-        start = time.time()
-        try:
-            response = requests.post(url, json={"jsonrpc":"2.0","id":1,"method":"getHealth"})
-            duration = int((time.time() - start) * 1000)
-            results.append({
-                "url": url,
-                "status": response.status_code,
-                "response_time_ms": duration,
-                "ok": response.ok,
-                "error": None if response.ok else response.text
-            })
-        except Exception as e:
-            duration = int((time.time() - start) * 1000)
-            results.append({
-                "url": url,
-                "status": "failed",
-                "response_time_ms": duration,
-                "ok": False,
-                "error": str(e)
-            })
-
-    return jsonify({"results": results})
-
-if __name__ == "__main__":
-    app.run(debug=True)
+@app.route("/rpc-test")
+def test_rpcs():
+    try:
+        with open(RPC_JSON_PATH, "r") as file:
+            rpc_data = json.load(file)
+        rpcs = rpc_data.get("rpcs", [])
+        results = []
+        for rpc in rpcs:
+            try:
+                start = time.time()
+                response = requests.post(rpc, json={"jsonrpc":"2.0","id":1,"method":"getHealth"})
+                latency = round((time.time() - start)*1000, 2)
+                results.append({"rpc": rpc, "status": response.json(), "latency_ms": latency})
+            except Exception as rpc_error:
+                results.append({"rpc": rpc, "status": "Failed", "error": str(rpc_error)})
+        return jsonify(results=results)
+    except Exception as e:
+        return jsonify(error="RPC testing failed", details=str(e)), 500
