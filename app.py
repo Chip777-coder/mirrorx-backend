@@ -9,15 +9,13 @@ app = Flask(__name__)
 def home():
     return "MirrorX Backend is Live"
 
-@app.route("/rpc-list", methods=["GET"])
+@app.route('/rpc-list', methods=['GET'])
 def rpc_list():
     try:
-        json_path = os.path.join(os.path.dirname(__file__), 'rpcs', 'rpc_list.json')
-        with open(json_path, 'r') as f:
+        with open('rpc_list.json', 'r') as f:  # ← no subfolder
             data = json.load(f)
         return jsonify({'rpcs': data})
-    except Exception as e:
+    except FileNotFoundError as e:
         return jsonify({'error': 'RPC list fetch failed', 'details': str(e)}), 500
-
 if __name__ == "__main__":
     app.run()
