@@ -69,3 +69,8 @@ def best_rpc():
 
 if __name__ == '__main__':
     app.run(debug=True)
+    @app.route("/")
+def home():
+    return "MirrorX Backend is Live!"@app.route("/status")
+def status():
+    return {"status": "ok", "message": "MirrorX backend running"}
