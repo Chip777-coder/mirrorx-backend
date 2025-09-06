@@ -57,3 +57,37 @@ def test_rpcs():
 
 if __name__ == "__main__":
     app.run()
+    @app.route('/rpc-test', methods=['GET'])
+def rpc_test():
+    try:
+        with open('rpc_list.json', 'r') as f:
+            rpcs = json.load(f)
+        
+        results = []
+        for rpc_url in rpcs:
+            start = time.time()
+            try:
+                response = requests.post(rpc_url, json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getHealth"
+                }, timeout=3)
+                latency = (time.time() - start) * 1000
+                results.append({
+                    'rpc': rpc_url,
+                    'status': response.status_code,
+                    'latency_ms': round(latency, 2),
+                    'health': response.json().get('result', 'unknown')
+                })
+            except Exception as e:
+                latency = (time.time() - start) * 1000
+                results.append({
+                    'rpc': rpc_url,
+                    'status': 'error',
+                    'latency_ms': round(latency, 2),
+                    'error': str(e)
+                })
+
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({'error': 'RPC test failed', 'details': str(e)}), 500
