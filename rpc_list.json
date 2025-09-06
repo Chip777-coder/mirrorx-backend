@@ -1,5 +1,5 @@
 [
-  "https://api.mainnet-beta.solana.com?fallback=0",
-  "https://solana-mainnet.rpcpool.com?fallback=0",
-  "https://mainnet.helius-rpc.com?fallback=0"
+    "https://api.mainnet-beta.solana.com?fallback=0",
+    "https://solana-mainnet.rpcpool.com?fallback=0",
+    "https://mainnet.helius-rpc.com?fallback=0"
 ]

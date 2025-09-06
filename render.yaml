@@ -1,1 +1,8 @@
-# Placeholder content for backend file: render.yaml
+services:
+  - type: web
+    name: mirrorx-backend
+    env: python
+    buildCommand: ""
+    startCommand: gunicorn app:app
+    plan: free
+    envVars: []
