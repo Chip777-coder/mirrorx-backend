@@ -9,7 +9,7 @@ app = Flask(__name__)
 rpc_file_path = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
 try:
     with open(rpc_file_path, "r") as f:
-        rpc_list = json.load(f)
+        rpc_list = json.load(f).get("rpcs", [])
 except Exception as e:
     print(f"Error loading RPC list: {e}")
     rpc_list = []
@@ -57,6 +57,9 @@ def real_rpc_status():
                 "method": "getSlot",
                 "status": "Failed",
                 "error": str(e)
+            })
+
+    return jsonify(results)
             })
 
     return jsonify(results)
