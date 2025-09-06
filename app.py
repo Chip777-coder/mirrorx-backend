@@ -60,3 +60,4 @@ def real_rpc_status():
             })
 
     return jsonify(results)
+response = requests.post(url, json=payload, timeout=2)
