@@ -1,10 +1,9 @@
 from flask import Flask, jsonify
-import requests
 import json
 import os
 
-# Import only the function to register the route (not redefine it)
-from routes.rpc_status import real_rpc_status
+# Import the Blueprint from routes
+from routes.rpc_status import rpc_status_bp
 
 app = Flask(__name__)
 
@@ -25,9 +24,8 @@ def home():
 def list_rpcs():
     return jsonify(rpc_list)
 
-# DO NOT redefine real_rpc_status here.
-# It's already defined in routes/rpc_status.py and registered via app.route
+# Register the /rpc-status route from the Blueprint
+app.register_blueprint(rpc_status_bp)
 
-# ✅ Removed:
-# - Duplicate `/rpc-status` route
-# - Line: `response = requests.post(url, json=payload, timeout=2)`
+if __name__ == "__main__":
+    app.run(debug=True)
