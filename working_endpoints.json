@@ -1,5 +1,5 @@
 {
-  "rpcs": [
+  "working": [
     "https://api.mainnet-beta.solana.com",
     "https://solana-mainnet.g.alchemy.com/v2/demo"
   ]
