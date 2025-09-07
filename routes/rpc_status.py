@@ -1,6 +1,21 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from flask import Blueprint, jsonify, current_app
+import requests
+import json
+import os
+import concurrent.futures
 
-@app.route("/rpc-status")
+rpc_status_bp = Blueprint('rpc_status_bp', __name__)
+
+# Load the RPC list from the parent directory
+rpc_file_path = os.path.join(os.path.dirname(__file__), "..", "rpcs", "rpc_list.json")
+try:
+    with open(rpc_file_path, "r") as f:
+        rpc_list = json.load(f).get("rpcs", [])
+except Exception as e:
+    print(f"Error loading RPC list: {e}")
+    rpc_list = []
+
+@rpc_status_bp.route("/rpc-status")
 def real_rpc_status():
     def check_rpc(url):
         payload = {
@@ -10,34 +25,28 @@ def real_rpc_status():
             "params": []
         }
         try:
-            response = requests.post(url, json=payload, timeout=5)
+            response = requests.post(url, json=payload, timeout=6)
             data = response.json()
             if "result" in data:
                 return {
                     "rpc_url": url,
-                    "method": "getSlot",
-                    "result": data.get("result"),
+                    "result": data["result"],
                     "status": "Success"
                 }
             else:
                 return {
                     "rpc_url": url,
-                    "method": "getSlot",
                     "status": "Failed",
-                    "error": data.get("error", "No result returned")
+                    "error": data.get("error", "Unknown")
                 }
         except Exception as e:
             return {
                 "rpc_url": url,
-                "method": "getSlot",
                 "status": "Failed",
                 "error": str(e)
             }
 
-    results = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_url = {executor.submit(check_rpc, url): url for url in rpc_list}
-        for future in as_completed(future_to_url):
-            results.append(future.result())
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(check_rpc, rpc_list))
 
     return jsonify(results)
