@@ -1,42 +1,51 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify
+import os, json, requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from utils.rpc import load_rpc_urls, get_session, check_rpc_once
-from config import RPC_TIMEOUT_SEC, RPC_MAX_WORKERS, RPC_TOP_N
 
 rpc_status_bp = Blueprint("rpc_status_bp", __name__)
-SESSION = get_session()
+
+# --- Load RPC list ---
+RPC_FILE = os.path.join(os.path.dirname(__file__), "..", "rpcs", "rpc_list.json")
+
+def load_rpc_urls():
+    try:
+        with open(RPC_FILE, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict) and "rpcs" in data:
+                return data["rpcs"]
+            if isinstance(data, list):
+                return data
+    except Exception as e:
+        print(f"Error loading RPC list: {e}")
+    return []
+
+RPC_URLS = load_rpc_urls()
 
 @rpc_status_bp.route("/rpc-list")
 def rpc_list():
-    return jsonify(load_rpc_urls())
+    # return a raw JSON array for your frontend
+    return jsonify(RPC_URLS)
+
+def check_rpc(url, timeout=6):
+    payload = {"jsonrpc": "2.0", "id": 1, "method": "getSlot", "params": []}
+    try:
+        resp = requests.post(url, json=payload, timeout=timeout)
+        try:
+            data = resp.json()
+        except Exception:
+            return {"rpc_url": url, "status": "Failed", "error": "Non-JSON response"}
+        if "result" in data:
+            return {"rpc_url": url, "status": "Success", "result": data["result"]}
+        return {"rpc_url": url, "status": "Failed", "error": data.get("error", "No result returned")}
+    except requests.exceptions.RequestException as e:
+        return {"rpc_url": url, "status": "Failed", "error": str(e)}
 
 @rpc_status_bp.route("/rpc-status")
 def rpc_status():
-    urls = load_rpc_urls()
     results = []
-    with ThreadPoolExecutor(max_workers=RPC_MAX_WORKERS) as pool:
-        futures = {pool.submit(check_rpc_once, SESSION, url, RPC_TIMEOUT_SEC): url for url in urls}
+    max_workers = int(os.environ.get("RPC_MAX_WORKERS", "10"))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(check_rpc, u): u for u in RPC_URLS}
         for fut in as_completed(futures):
             results.append(fut.result())
     return jsonify(results)
-
-@rpc_status_bp.route("/rpc-fast")
-def rpc_fast():
-    n = int(request.args.get("n", RPC_TOP_N))
-    urls = load_rpc_urls()
-    results = []
-    with ThreadPoolExecutor(max_workers=RPC_MAX_WORKERS) as pool:
-        futures = {pool.submit(check_rpc_once, SESSION, url, RPC_TIMEOUT_SEC): url for url in urls}
-        for fut in as_completed(futures):
-            results.append(fut.result())
-    ok = [r for r in results if r.get("status") == "Success"]
-    ok.sort(key=lambda x: (x.get("latency_ms", 9e9)))
-    return jsonify(ok[:n])
-
-@rpc_status_bp.route("/rpc-probe")
-def rpc_probe():
-    url = request.args.get("url")
-    if not url:
-        return jsonify({"error": "missing ?url="}), 400
-    res = check_rpc_once(SESSION, url, RPC_TIMEOUT_SEC)
-    return jsonify(res)
