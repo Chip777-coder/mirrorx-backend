@@ -60,3 +60,14 @@ if os.getenv("ENABLE_AGENTS", "0") == "1":
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
+# BEFORE
+# from routes.rpc_status import rpc_status_bp
+# from routes.alerts import alerts_bp
+# from routes.agents import agents_bp
+# from routes.smoke import smoke_bp   # if you added /smoke
+
+# AFTER (use one style; I recommend relative)
+from .routes.rpc_status import rpc_status_bp
+from .routes.alerts import alerts_bp
+from .routes.agents import agents_bp
+from .routes.smoke import smoke_bp  # if present
