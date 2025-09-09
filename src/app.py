@@ -6,6 +6,7 @@ import json
 
 # ----- Load RPCs (keeps your old /rpc-list behavior) -----
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
+
 def load_rpc_urls():
     try:
         with open(RPC_FILE, "r") as f:
@@ -26,7 +27,6 @@ CORS(app)
 
 @app.route("/")
 def home():
-    # Keep this simple and 200 so Render's first GET doesn't 404
     return "MirrorX backend is live ✅"
 
 @app.route("/healthz")
@@ -38,36 +38,33 @@ def rpc_list():
     return jsonify(RPC_URLS)
 
 # ----- Blueprints -----
-# Always present
-from routes.rpc_status import rpc_status_bp
+# Use RELATIVE imports so Python resolves src.routes package (and not any stray routes.py)
+from .routes.rpc_status import rpc_status_bp
 app.register_blueprint(rpc_status_bp, url_prefix="")
 
-# Optional blueprints (don’t crash if files are missing)
+# Optional blueprints
 if os.getenv("ENABLE_ALERT_INGEST", "0") == "1":
     try:
-        from routes.alerts import alerts_bp
+        from .routes.alerts import alerts_bp
         app.register_blueprint(alerts_bp, url_prefix="")
     except Exception as e:
-        print(f"[WARN] ENABLE_ALERT_INGEST=1 but routes/alerts.py not found or failed to import: {e}")
+        print(f"[WARN] ENABLE_ALERT_INGEST=1 but routes/alerts failed to import: {e}")
 
 if os.getenv("ENABLE_AGENTS", "0") == "1":
     try:
-        from routes.agents import agents_bp
+        from .routes.agents import agents_bp
         app.register_blueprint(agents_bp, url_prefix="")
     except Exception as e:
-        print(f"[WARN] ENABLE_AGENTS=1 but routes/agents.py not found or failed to import: {e}")
+        print(f"[WARN] ENABLE_AGENTS=1 but routes/agents failed to import: {e}")
+
+# Optional smoke test route (only if you actually created src/routes/smoke.py)
+if os.getenv("ENABLE_SMOKE", "0") == "1":
+    try:
+        from .routes.smoke import smoke_bp
+        app.register_blueprint(smoke_bp, url_prefix="")
+    except Exception as e:
+        print(f"[WARN] ENABLE_SMOKE=1 but routes/smoke failed to import: {e}")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
-# BEFORE
-# from routes.rpc_status import rpc_status_bp
-# from routes.alerts import alerts_bp
-# from routes.agents import agents_bp
-# from routes.smoke import smoke_bp   # if you added /smoke
-
-# AFTER (use one style; I recommend relative)
-from .routes.rpc_status import rpc_status_bp
-from .routes.alerts import alerts_bp
-from .routes.agents import agents_bp
-from .routes.smoke import smoke_bp  # if present
