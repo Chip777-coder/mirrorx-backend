@@ -68,3 +68,11 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
+from config import settings
+
+@app.route("/test-env")
+def test_env():
+    return {
+        "moralis": bool(settings.MORALIS_API_KEY),  # True if set
+        "alchemy": settings.ALCHEMY_API_KEY[:6] + "..." if settings.ALCHEMY_API_KEY else "not set"
+    }
