@@ -1,31 +1,25 @@
 # src/config.py
 import os
-
-QUICKNODE_HTTP = os.getenv("QUICKNODE_HTTP", "").rstrip("/") + "/"
-QUICKNODE_WS   = os.getenv("QUICKNODE_WS", "").rstrip("/") + "/"
-
-# If true, rpc-status uses ONLY QuickNode. If false, it will also include rpcs/rpc_list.json.
-USE_ONLY_QUICKNODE = os.getenv("USE_ONLY_QUICKNODE", "1") == "1"
-
-# Basic concurrency limits for /rpc-status
-RPC_TIMEOUT_SECS = int(os.getenv("RPC_TIMEOUT_SECS", "6"))
-RPC_MAX_WORKERS  = int(os.getenv("RPC_MAX_WORKERS", "10"))
-# src/config.py
-import os
 from dataclasses import dataclass
 
 @dataclass
 class Settings:
+    # -------------------------
     # Core
+    # -------------------------
     PORT: int = int(os.getenv("PORT", "10000"))
     FLASK_ENV: str = os.getenv("FLASK_ENV", "production")
 
-    # Database
+    # -------------------------
+    # Database (Supabase / Postgres)
+    # -------------------------
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
     SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
 
+    # -------------------------
     # Blockchain / Data APIs
+    # -------------------------
     COINGECKO_API_BASE: str = os.getenv("COINGECKO_API_BASE", "https://api.coingecko.com/api/v3")
     COINMARKETCAP_API_KEY: str = os.getenv("COINMARKETCAP_API_KEY", "")
     DEFILLAMA_API_BASE: str = os.getenv("DEFILLAMA_API_BASE", "https://api.llama.fi")
@@ -38,12 +32,16 @@ class Settings:
     PUSH_API_KEY: str = os.getenv("PUSH_API_KEY", "")
     ANKR_API_KEY: str = os.getenv("ANKR_API_KEY", "")
 
+    # -------------------------
     # Optional: QuickNode
+    # -------------------------
     QUICKNODE_HTTP: str = os.getenv("QUICKNODE_HTTP_URL", "")
     QUICKNODE_WSS: str = os.getenv("QUICKNODE_WSS_URL", "")
     USE_ONLY_QUICKNODE: bool = os.getenv("USE_ONLY_QUICKNODE", "0") == "1"
 
+    # -------------------------
     # RPC Config
+    # -------------------------
     RPC_TIMEOUT_SECS: int = int(os.getenv("RPC_TIMEOUT_SECS", "6"))
     RPC_MAX_WORKERS: int = int(os.getenv("RPC_MAX_WORKERS", "10"))
 
