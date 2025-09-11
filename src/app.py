@@ -3,7 +3,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 import os
 import json
-
+from src.config import settings
 # Import config safely (must be relative to src package)
 from src.config import settings
 
