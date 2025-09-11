@@ -1,4 +1,3 @@
-# src/routes/alerts.py
 from flask import Blueprint, request, jsonify
 import requests
 from ..config import settings
@@ -7,11 +6,6 @@ alerts_bp = Blueprint("alerts_bp", __name__)
 
 @alerts_bp.route("/alerts", methods=["POST"])
 def ingest_alert():
-    """
-    Example alert ingestion endpoint.
-    If Supabase keys are set, pushes alerts into Supabase.
-    Otherwise, just echoes the alert back.
-    """
     data = request.json or {}
 
     if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
