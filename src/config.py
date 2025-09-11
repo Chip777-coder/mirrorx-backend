@@ -1,99 +1,40 @@
-# src/routes/rpc_status.py
-from flask import Blueprint, jsonify, request
-import os, json, requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from ..config import settings
+    # src/config.py
+import os
+from dataclasses import dataclass
 
-rpc_status_bp = Blueprint("rpc_status_bp", __name__)
+@dataclass
+class Settings:
+    # Core
+    PORT: int = int(os.getenv("PORT", "10000"))
+    FLASK_ENV: str = os.getenv("FLASK_ENV", "production")
 
-# Load fallback RPCs, but we'll prefer QuickNode.
-RPC_FILE = os.path.join(os.path.dirname(__file__), "..", "rpcs", "rpc_list.json")
+    # Database
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
+    SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
 
-def load_rpc_urls():
-    try:
-        with open(RPC_FILE, "r") as f:
-            data = json.load(f)
-            if isinstance(data, dict) and "rpcs" in data:
-                return data["rpcs"]
-            if isinstance(data, list):
-                return data
-    except Exception as e:
-        print(f"[rpc_status] failed loading rpc_list.json: {e}")
-    return []
+    # Blockchain / Data APIs
+    COINGECKO_API_BASE: str = os.getenv("COINGECKO_API_BASE", "https://api.coingecko.com/api/v3")
+    COINMARKETCAP_API_KEY: str = os.getenv("COINMARKETCAP_API_KEY", "")
+    DEFILLAMA_API_BASE: str = os.getenv("DEFILLAMA_API_BASE", "https://api.llama.fi")
+    DEXSCREENER_API_BASE: str = os.getenv("DEXSCREENER_API_BASE", "https://api.dexscreener.com")
+    LUNARCRUSH_API_KEY: str = os.getenv("LUNARCRUSH_API_KEY", "")
+    CRYPTOPANIC_API_KEY: str = os.getenv("CRYPTOPANIC_API_KEY", "")
+    ALCHEMY_API_KEY: str = os.getenv("ALCHEMY_API_KEY", "")
+    MORALIS_API_KEY: str = os.getenv("MORALIS_API_KEY", "")
+    SOLSCAN_API_KEY: str = os.getenv("SOLSCAN_API_KEY", "")
+    PUSH_API_KEY: str = os.getenv("PUSH_API_KEY", "")
+    ANKR_API_KEY: str = os.getenv("ANKR_API_KEY", "")
+    SENTIMENT_API_KEY: str = os.getenv("SENTIMENT_API_KEY", "")
+    SHYFT_API_KEY: str = os.getenv("SHYFT_API_KEY", "")
 
-FALLBACK_RPCS = load_rpc_urls()
+    # Optional: QuickNode
+    QUICKNODE_HTTP: str = os.getenv("QUICKNODE_HTTP_URL", "")
+    QUICKNODE_WSS: str = os.getenv("QUICKNODE_WSS_URL", "")
+    USE_ONLY_QUICKNODE: bool = os.getenv("USE_ONLY_QUICKNODE", "0") == "1"
 
-def unique(seq):
-    seen = set()
-    out = []
-    for s in seq:
-        if s not in seen:
-            seen.add(s)
-            out.append(s)
-    return out
+    # RPC Config
+    RPC_TIMEOUT_SECS: int = int(os.getenv("RPC_TIMEOUT_SECS", "6"))
+    RPC_MAX_WORKERS: int = int(os.getenv("RPC_MAX_WORKERS", "10"))
 
-def probe(url, timeout=settings.RPC_TIMEOUT_SECS):
-    """Check if an RPC responds with getSlot"""
-    payload = {"jsonrpc": "2.0", "id": 1, "method": "getSlot", "params": []}
-    try:
-        resp = requests.post(url, json=payload, timeout=timeout)
-        try:
-            data = resp.json()
-        except Exception:
-            return {"rpc_url": url, "status": "Failed", "error": "Non-JSON response"}
-        if "result" in data:
-            return {"rpc_url": url, "status": "Success", "result": data["result"]}
-        return {"rpc_url": url, "status": "Failed", "error": data.get("error", "No result")}
-    except requests.exceptions.RequestException as e:
-        return {"rpc_url": url, "status": "Failed", "error": str(e)}
-
-@rpc_status_bp.route("/rpc-status")
-def rpc_status():
-    """
-    Behavior:
-      - If USE_ONLY_QUICKNODE=1 and QUICKNODE_HTTP is set → only check that.
-      - Else → QuickNode first, then a trimmed list of public RPCs.
-    Query params:
-      - limit: max number of RPCs to check (default 12)
-      - batch: if '1', trim to distinct providers (avoid spamming same host with many fallback=N variants)
-    """
-    limit = max(1, int(request.args.get("limit", "12")))
-    batch_mode = request.args.get("batch", "1") == "1"
-
-    urls = []
-    if settings.QUICKNODE_HTTP and settings.QUICKNODE_HTTP.startswith("http"):
-        urls.append(settings.QUICKNODE_HTTP)
-
-    if not (settings.USE_ONLY_QUICKNODE and urls):
-        noisy_hosts = (
-            "helius-rpc.com",
-            "rpcpool.com",
-            "shyft.to",
-            "hellomoon.io",
-            "chainstack.com",
-            "mintgarden.io",
-        )
-        filtered = [u for u in FALLBACK_RPCS if all(h not in u for h in noisy_hosts)]
-        urls.extend(filtered)
-
-    urls = unique(urls)
-
-    if batch_mode and len(urls) > 1:
-        by_host = {}
-        for u in urls:
-            try:
-                host = u.split("//", 1)[1].split("/", 1)[0]
-            except Exception:
-                host = u
-            if host not in by_host:
-                by_host[host] = u
-        urls = list(by_host.values())
-
-    urls = urls[:limit]
-
-    results = []
-    with ThreadPoolExecutor(max_workers=settings.RPC_MAX_WORKERS) as ex:
-        futs = {ex.submit(probe, u): u for u in urls}
-        for fut in as_completed(futs):
-            results.append(fut.result())
-    return jsonify(results)
+settings = Settings()
