@@ -32,18 +32,18 @@ def unique(seq):
     return out
 
 def probe(url, timeout=None):
-    payload = {"jsonrpc":"2.0","id":1,"method":"getSlot","params":[]}
+    payload = {"jsonrpc": "2.0", "id": 1, "method": "getSlot", "params": []}
     try:
         resp = requests.post(url, json=payload, timeout=timeout or settings.RPC_TIMEOUT_SECS)
         try:
             data = resp.json()
         except Exception:
-            return {"rpc_url": url, "status":"Failed", "error":"Non-JSON response"}
+            return {"rpc_url": url, "status": "Failed", "error": "Non-JSON response"}
         if "result" in data:
-            return {"rpc_url": url, "status":"Success", "result": data["result"]}
-        return {"rpc_url": url, "status":"Failed", "error": data.get("error","No result")}
+            return {"rpc_url": url, "status": "Success", "result": data["result"]}
+        return {"rpc_url": url, "status": "Failed", "error": data.get("error", "No result")}
     except requests.exceptions.RequestException as e:
-        return {"rpc_url": url, "status":"Failed", "error": str(e)}
+        return {"rpc_url": url, "status": "Failed", "error": str(e)}
 
 @rpc_status_bp.route("/rpc-status")
 def rpc_status():
@@ -75,7 +75,7 @@ def rpc_status():
         by_host = {}
         for u in urls:
             try:
-                host = u.split("//",1)[1].split("/",1)[0]
+                host = u.split("//", 1)[1].split("/", 1)[0]
             except Exception:
                 host = u
             if host not in by_host:
@@ -89,5 +89,4 @@ def rpc_status():
         futs = {ex.submit(probe, u): u for u in urls}
         for fut in as_completed(futs):
             results.append(fut.result())
-
     return jsonify(results)
