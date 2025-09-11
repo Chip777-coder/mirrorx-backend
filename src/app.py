@@ -3,7 +3,9 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 import os
 import json
-from config import settings
+
+# Import config safely (must be relative to src package)
+from src.config import settings
 
 # ----- Load RPCs (keeps your old /rpc-list behavior) -----
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
@@ -79,8 +81,8 @@ def test_env():
         "solscan": bool(settings.SOLSCAN_API_KEY),
         "push": bool(settings.PUSH_API_KEY),
         "ankr": bool(settings.ANKR_API_KEY),
-        "sentiment": bool(settings.SENTIMENT_API_KEY),
-        "shyft": bool(settings.SHYFT_API_KEY),
+        "sentiment": bool(getattr(settings, "SENTIMENT_API_KEY", "")),
+        "shyft": bool(getattr(settings, "SHYFT_API_KEY", "")),
         "quicknode_http": bool(settings.QUICKNODE_HTTP),
         "quicknode_wss": bool(settings.QUICKNODE_WSS),
     }
