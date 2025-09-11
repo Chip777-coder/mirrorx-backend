@@ -3,6 +3,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 import os
 import json
+from config import settings
 
 # ----- Load RPCs (keeps your old /rpc-list behavior) -----
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
@@ -38,41 +39,51 @@ def rpc_list():
     return jsonify(RPC_URLS)
 
 # ----- Blueprints -----
-# Use RELATIVE imports so Python resolves src.routes package (and not any stray routes.py)
 from .routes.rpc_status import rpc_status_bp
 app.register_blueprint(rpc_status_bp, url_prefix="")
 
-# Optional blueprints
 if os.getenv("ENABLE_ALERT_INGEST", "0") == "1":
     try:
         from .routes.alerts import alerts_bp
         app.register_blueprint(alerts_bp, url_prefix="")
     except Exception as e:
-        print(f"[WARN] ENABLE_ALERT_INGEST=1 but routes/alerts failed to import: {e}")
+        print(f"[WARN] Alerts failed to import: {e}")
 
 if os.getenv("ENABLE_AGENTS", "0") == "1":
     try:
         from .routes.agents import agents_bp
         app.register_blueprint(agents_bp, url_prefix="")
     except Exception as e:
-        print(f"[WARN] ENABLE_AGENTS=1 but routes/agents failed to import: {e}")
+        print(f"[WARN] Agents failed to import: {e}")
 
-# Optional smoke test route (only if you actually created src/routes/smoke.py)
 if os.getenv("ENABLE_SMOKE", "0") == "1":
     try:
         from .routes.smoke import smoke_bp
         app.register_blueprint(smoke_bp, url_prefix="")
     except Exception as e:
-        print(f"[WARN] ENABLE_SMOKE=1 but routes/smoke failed to import: {e}")
+        print(f"[WARN] Smoke failed to import: {e}")
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "10000"))
-    app.run(host="0.0.0.0", port=port)
-from config import settings
-
+# ----- Test ENV endpoint -----
 @app.route("/test-env")
 def test_env():
+    """Check which API keys are set without exposing full values."""
     return {
-        "moralis": bool(settings.MORALIS_API_KEY),  # True if set
-        "alchemy": settings.ALCHEMY_API_KEY[:6] + "..." if settings.ALCHEMY_API_KEY else "not set"
+        "coingecko": bool(settings.COINGECKO_API_BASE),
+        "coinmarketcap": bool(settings.COINMARKETCAP_API_KEY),
+        "defillama": bool(settings.DEFILLAMA_API_BASE),
+        "dexscreener": bool(settings.DEXSCREENER_API_BASE),
+        "lunarcrush": bool(settings.LUNARCRUSH_API_KEY),
+        "cryptopanic": bool(settings.CRYPTOPANIC_API_KEY),
+        "alchemy": bool(settings.ALCHEMY_API_KEY),
+        "moralis": bool(settings.MORALIS_API_KEY),
+        "solscan": bool(settings.SOLSCAN_API_KEY),
+        "push": bool(settings.PUSH_API_KEY),
+        "ankr": bool(settings.ANKR_API_KEY),
+        "sentiment": bool(settings.SENTIMENT_API_KEY),
+        "shyft": bool(settings.SHYFT_API_KEY),
+        "quicknode_http": bool(settings.QUICKNODE_HTTP),
+        "quicknode_wss": bool(settings.QUICKNODE_WSS),
     }
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=settings.PORT)
