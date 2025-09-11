@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 smoke_bp = Blueprint("smoke_bp", __name__)
 
-# Reuse the same rpc list file path convention you already have
 RPC_FILE = os.path.join(os.path.dirname(__file__), "..", "rpcs", "rpc_list.json")
 
 def load_rpc_urls():
@@ -34,7 +33,6 @@ def probe_rpc(url, timeout=6):
 
 @smoke_bp.route("/smoke")
 def smoke():
-    # Batch report: counts only (fast to read), plus a small sample
     max_workers = int(os.environ.get("RPC_MAX_WORKERS", "10"))
     results = []
     if RPC_URLS:
@@ -44,10 +42,10 @@ def smoke():
                 results.append(fut.result())
     ok = sum(1 for r in results if r["status"] == "Success")
     fail = sum(1 for r in results if r["status"] != "Success")
-    sample = results[:3]  # small preview
+    sample = results[:3]
 
     return jsonify({
-        "healthz": {"ok": True},                # if this route works, app is alive
+        "healthz": {"ok": True},
         "rpc_list_count": len(RPC_URLS),
         "rpc_status": {"ok": ok, "fail": fail, "sample": sample}
     })
