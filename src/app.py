@@ -3,9 +3,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 import os
 import json
-from src.config import settings
-# Import config safely (must be relative to src package)
-from src.config import settings
+from src.config import settings  # import once, from the src package
 
 # ----- Load RPCs (keeps your old /rpc-list behavior) -----
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
