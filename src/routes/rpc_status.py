@@ -6,8 +6,9 @@ from ..config import settings
 
 rpc_status_bp = Blueprint("rpc_status_bp", __name__)
 
-# Load fallback RPCs
+# Load fallback RPCs, but we'll prefer QuickNode.
 RPC_FILE = os.path.join(os.path.dirname(__file__), "..", "rpcs", "rpc_list.json")
+
 def load_rpc_urls():
     try:
         with open(RPC_FILE, "r") as f:
@@ -48,8 +49,12 @@ def probe(url, timeout=None):
 @rpc_status_bp.route("/rpc-status")
 def rpc_status():
     """
-    - If USE_ONLY_QUICKNODE=1 and QUICKNODE_HTTP is set → only check that.
-    - Else → QuickNode first, then a trimmed list of public RPCs.
+    Behavior:
+      - If USE_ONLY_QUICKNODE=1 and QUICKNODE_HTTP is set → only check that.
+      - Else → QuickNode first, then a trimmed list of public RPCs.
+    Query params:
+      - limit: max number of RPCs to check (default 12)
+      - batch: if '1', trim to distinct providers
     """
     limit = max(1, int(request.args.get("limit", "12")))
     batch_mode = request.args.get("batch", "1") == "1"
