@@ -1,4 +1,3 @@
-# src/routes/rpc_status.py
 from flask import Blueprint, jsonify, request
 import os, json, requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -6,7 +5,6 @@ from ..config import settings
 
 rpc_status_bp = Blueprint("rpc_status_bp", __name__)
 
-# Load fallback RPCs, but we'll prefer QuickNode.
 RPC_FILE = os.path.join(os.path.dirname(__file__), "..", "rpcs", "rpc_list.json")
 
 def load_rpc_urls():
@@ -24,8 +22,7 @@ def load_rpc_urls():
 FALLBACK_RPCS = load_rpc_urls()
 
 def unique(seq):
-    seen = set()
-    out = []
+    seen, out = set(), []
     for s in seq:
         if s not in seen:
             seen.add(s)
@@ -49,12 +46,11 @@ def probe(url, timeout=None):
 @rpc_status_bp.route("/rpc-status")
 def rpc_status():
     """
-    Behavior:
-      - If USE_ONLY_QUICKNODE=1 and QUICKNODE_HTTP is set → only check that.
-      - Else → QuickNode first, then a trimmed list of public RPCs.
-    Query params:
-      - limit: max number of RPCs to check (default 12)
-      - batch: if '1', trim to distinct providers
+    - If USE_ONLY_QUICKNODE=1 and QUICKNODE_HTTP is set → only check that.
+    - Else → QuickNode first, then a trimmed list of public RPCs.
+    Query:
+      - limit: max RPCs to check (default 12)
+      - batch=1: collapse to one per host
     """
     limit = max(1, int(request.args.get("limit", "12")))
     batch_mode = request.args.get("batch", "1") == "1"
