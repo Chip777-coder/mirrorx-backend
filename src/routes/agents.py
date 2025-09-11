@@ -1,4 +1,3 @@
-# src/routes/agents.py
 from flask import Blueprint, jsonify
 import requests
 from ..config import settings
@@ -7,13 +6,9 @@ agents_bp = Blueprint("agents_bp", __name__)
 
 @agents_bp.route("/agents/status")
 def agents_status():
-    """
-    Example endpoint showing availability of key external APIs.
-    Expandable for any services you add.
-    """
     checks = {}
 
-    # Moralis check
+    # Moralis (optional)
     if settings.MORALIS_API_KEY:
         try:
             resp = requests.get(
@@ -28,7 +23,7 @@ def agents_status():
     else:
         checks["moralis"] = "not configured"
 
-    # CoinGecko check (public)
+    # CoinGecko (public)
     try:
         resp = requests.get(f"{settings.COINGECKO_API_BASE}/ping", timeout=6)
         checks["coingecko"] = resp.json()
