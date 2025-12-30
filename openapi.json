@@ -1,5 +1,5 @@
 {
-  "openapi": "3.0.0",
+  "openapi": "3.1.0",
   "info": {
     "title": "MirroraX Intelligence API",
     "version": "1.0.0",
@@ -14,70 +14,61 @@
     "/healthz": {
       "get": {
         "summary": "Check system health",
+        "operationId": "get_healthz",
         "responses": {
-          "200": {
-            "description": "Health status"
-          }
+          "200": { "description": "Health status" }
         }
       }
     },
     "/crypto/solana": {
       "get": {
         "summary": "Fetch Solana ecosystem market data",
+        "operationId": "get_crypto_solana",
         "responses": {
-          "200": {
-            "description": "List of Solana tokens and metrics"
-          }
+          "200": { "description": "List of Solana tokens and metrics" }
         }
       }
     },
     "/intel/summary": {
       "get": {
         "summary": "Fetch summarized intelligence data",
+        "operationId": "get_intel_summary",
         "responses": {
-          "200": {
-            "description": "Summarized crypto and social intelligence"
-          }
+          "200": { "description": "Summarized crypto and social intelligence" }
         }
       }
     },
     "/intel/full": {
       "get": {
         "summary": "Fetch full intelligence dataset",
+        "operationId": "get_intel_full",
         "responses": {
-          "200": {
-            "description": "Comprehensive intelligence data"
-          }
+          "200": { "description": "Comprehensive intelligence data" }
         }
       }
     },
     "/twitterRapid/likes": {
       "get": {
-        "summary": "Fetch latest Twitter like data",
+        "summary": "Fetch Twitter likes using RapidAPI",
+        "operationId": "get_twitterRapid_likes",
         "parameters": [
           {
             "name": "pid",
             "in": "query",
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "required": true,
             "description": "Post ID to check"
           },
           {
             "name": "count",
             "in": "query",
-            "schema": {
-              "type": "integer"
-            },
+            "schema": { "type": "integer" },
             "required": false,
             "description": "Number of likes to retrieve"
           }
         ],
         "responses": {
-          "200": {
-            "description": "List of recent likes"
-          }
+          "200": { "description": "List of recent likes" }
         }
       }
     }
