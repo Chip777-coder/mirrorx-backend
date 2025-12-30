@@ -1,0 +1,85 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "MirroraX Intelligence API",
+    "version": "1.0.0",
+    "description": "Provides live market, social, and intelligence data for the MirroraX GPT."
+  },
+  "servers": [
+    {
+      "url": "https://mirrorx-backend.onrender.com"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Check system health",
+        "responses": {
+          "200": {
+            "description": "Health status"
+          }
+        }
+      }
+    },
+    "/crypto/solana": {
+      "get": {
+        "summary": "Fetch Solana ecosystem market data",
+        "responses": {
+          "200": {
+            "description": "List of Solana tokens and metrics"
+          }
+        }
+      }
+    },
+    "/intel/summary": {
+      "get": {
+        "summary": "Fetch summarized intelligence data",
+        "responses": {
+          "200": {
+            "description": "Summarized crypto and social intelligence"
+          }
+        }
+      }
+    },
+    "/intel/full": {
+      "get": {
+        "summary": "Fetch full intelligence dataset",
+        "responses": {
+          "200": {
+            "description": "Comprehensive intelligence data"
+          }
+        }
+      }
+    },
+    "/twitterRapid/likes": {
+      "get": {
+        "summary": "Fetch latest Twitter like data",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Post ID to check"
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Number of likes to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of recent likes"
+          }
+        }
+      }
+    }
+  }
+}
