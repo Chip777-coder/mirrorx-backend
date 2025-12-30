@@ -1,34 +1,54 @@
-from flask import Flask
-from routes.health import health_bp
-from routes.crypto import crypto_bp
-from routes.jupiter import jupiter_bp
-from routes.twitterRapid import twitter_bp
-from routes.intel import intel_bp
-from routes.discord import discord_bp
-from routes.telegram import telegram_bp
-from routes.commerce import commerce_bp
-from routes.geo import geo_bp
-from routes.weather import weather_bp
-from utils.scheduler import start_scheduler
+# src/app.py
+from flask import Flask, jsonify, send_from_directory
+from flask_cors import CORS
+import os, json
+from src.config import settings
+from src.routes.crypto import crypto_bp
+from src.routes.intel import intel_bp
+from src.routes.twitterRapid import twitter_bp
+
+RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
+
+def load_rpc_urls():
+    try:
+        with open(RPC_FILE, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict) and "rpcs" in data:
+                return data["rpcs"]
+            if isinstance(data, list):
+                return data
+    except Exception as e:
+        print(f"Error loading RPC list: {e}")
+    return []
+
+RPC_URLS = load_rpc_urls()
 
 app = Flask(__name__)
-
-# Register blueprints
-app.register_blueprint(health_bp, url_prefix="/healthz")
-app.register_blueprint(crypto_bp, url_prefix="/crypto")
-app.register_blueprint(jupiter_bp, url_prefix="/jupiter")
-app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
-app.register_blueprint(intel_bp, url_prefix="/intel")
-app.register_blueprint(discord_bp, url_prefix="/discord")
-app.register_blueprint(telegram_bp, url_prefix="/telegram")
-app.register_blueprint(commerce_bp, url_prefix="/commerce")
-app.register_blueprint(geo_bp, url_prefix="/geo")
-app.register_blueprint(weather_bp, url_prefix="/weather")
+CORS(app)
 
 @app.route("/")
 def home():
-    return "🧠 MirroraX Flask Backend Active"
+    return "MirrorX backend is live ✅"
+
+@app.route("/healthz")
+def healthz():
+    return jsonify({"ok": True})
+
+@app.route("/rpc-list")
+def rpc_list():
+    return jsonify(RPC_URLS)
+
+app.register_blueprint(crypto_bp, url_prefix="/crypto")
+app.register_blueprint(intel_bp, url_prefix="/intel")
+app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
+
+@app.route("/openapi.json", methods=["GET"])
+def serve_openapi():
+    return send_from_directory(os.getcwd(), "openapi.json")
+
+@app.route("/test-env")
+def test_env():
+    return {k: bool(v) for k, v in settings.__dict__.items() if not k.startswith("__")}
 
 if __name__ == "__main__":
-    start_scheduler()
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=settings.PORT)

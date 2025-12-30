@@ -6,45 +6,35 @@
     "description": "Provides live market, social, and intelligence data for the MirroraX GPT."
   },
   "servers": [
-    {
-      "url": "https://mirrorx-backend.onrender.com"
-    }
+    { "url": "https://mirrorx-backend.onrender.com" }
   ],
   "paths": {
     "/healthz": {
       "get": {
         "summary": "Check system health",
         "operationId": "get_healthz",
-        "responses": {
-          "200": { "description": "Health status" }
-        }
+        "responses": { "200": { "description": "Health status" } }
       }
     },
     "/crypto/solana": {
       "get": {
         "summary": "Fetch Solana ecosystem market data",
         "operationId": "get_crypto_solana",
-        "responses": {
-          "200": { "description": "List of Solana tokens and metrics" }
-        }
+        "responses": { "200": { "description": "List of Solana tokens and metrics" } }
       }
     },
     "/intel/summary": {
       "get": {
         "summary": "Fetch summarized intelligence data",
         "operationId": "get_intel_summary",
-        "responses": {
-          "200": { "description": "Summarized crypto and social intelligence" }
-        }
+        "responses": { "200": { "description": "Summarized crypto and social intelligence" } }
       }
     },
     "/intel/full": {
       "get": {
         "summary": "Fetch full intelligence dataset",
         "operationId": "get_intel_full",
-        "responses": {
-          "200": { "description": "Comprehensive intelligence data" }
-        }
+        "responses": { "200": { "description": "Comprehensive intelligence data" } }
       }
     },
     "/twitterRapid/likes": {
@@ -52,24 +42,10 @@
         "summary": "Fetch Twitter likes using RapidAPI",
         "operationId": "get_twitterRapid_likes",
         "parameters": [
-          {
-            "name": "pid",
-            "in": "query",
-            "schema": { "type": "string" },
-            "required": true,
-            "description": "Post ID to check"
-          },
-          {
-            "name": "count",
-            "in": "query",
-            "schema": { "type": "integer" },
-            "required": false,
-            "description": "Number of likes to retrieve"
-          }
+          { "name": "pid", "in": "query", "schema": { "type": "string" }, "required": true },
+          { "name": "count", "in": "query", "schema": { "type": "integer" }, "required": false }
         ],
-        "responses": {
-          "200": { "description": "List of recent likes" }
-        }
+        "responses": { "200": { "description": "List of recent likes" } }
       }
     }
   }
