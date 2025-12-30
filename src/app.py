@@ -87,3 +87,10 @@ def test_env():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=settings.PORT)
+from flask import send_from_directory
+import os
+
+@app.route("/openapi.json", methods=["GET"])
+def serve_openapi():
+    """Serve OpenAPI schema for GPT Actions"""
+    return send_from_directory(os.getcwd(), "openapi.json")
