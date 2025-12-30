@@ -4,7 +4,9 @@ from flask_cors import CORS
 import os
 import json
 from src.config import settings  # import once, from the src package
-
+from src.routes.crypto import crypto_bp
+from src.routes.intel import intel_bp
+from src.routes.twitterRapid import twitter_bp
 # ----- Load RPCs (keeps your old /rpc-list behavior) -----
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
 
@@ -62,7 +64,9 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
         app.register_blueprint(smoke_bp, url_prefix="")
     except Exception as e:
         print(f"[WARN] Smoke failed to import: {e}")
-
+app.register_blueprint(crypto_bp, url_prefix="/crypto")
+app.register_blueprint(intel_bp, url_prefix="/intel")
+app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
 # ----- Test ENV endpoint -----
 @app.route("/test-env")
 def test_env():
