@@ -1,26 +1,38 @@
-# MIRROR-BACKEND
+# MirroraX Backend Extended
 
-Drop-in Flask backend for Render.
+## 🚀 Overview
+This backend provides the MirroraX intelligence layer — combining crypto, social, sentiment, commerce, and geo intelligence data.
 
-## Quick start (Render)
-1. Create a new Web Service and point it at this repo.
-2. Build Command: `pip install -r requirements.txt`
-3. (Optional) Add env vars:
-   - `ENABLE_ALERT_INGEST=1`
-   - `ENABLE_AGENTS=1`
-   - `RPC_MAX_WORKERS=10`
-4. Health Check Path: `/healthz`
-5. It will serve:
-   - `/` → liveness text
-   - `/healthz` → `{ "ok": true }`
-   - `/rpc-list` → raw RPC list
-   - `/rpc-status` → probe multiple Solana RPCs (parallel)
-   - `/alerts/ping`, `/agents/ping` → stubs you can replace later
+### Key Features
+- Crypto (Solana ecosystem) data via CoinGecko and Birdeye
+- Jupiter price integration
+- Twitter RapidAPI sentiment
+- Discord, Telegram, Commerce, Geo, and Weather demo APIs
+- Redis caching
+- Automatic intelligence scheduler
 
-## Local
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-export PORT=10000
-python -m src.app
-```
+## ⚙️ Setup
+1. Copy `.env.example` to `.env`
+2. Run `npm install`
+3. Start server: `npm start`
+
+## 🌐 Endpoints
+| Route | Description |
+|-------|--------------|
+| `/crypto/solana` | Solana market data |
+| `/jupiter/price` | Jupiter pricing |
+| `/twitterRapid/likes` | Twitter RapidAPI likes |
+| `/discord/demo` | Discord demo sentiment |
+| `/telegram/demo` | Telegram mentions demo |
+| `/commerce/demo` | Amazon/FlashAPI product demo |
+| `/geo/demo` | Geo location demo |
+| `/weather/demo` | Open-Meteo weather demo |
+| `/intel/full` | Aggregated intelligence snapshot |
+
+## 🚀 Deploy on Render
+- Node Version: 18.x
+- Build Command: `npm install`
+- Start Command: `npm start`
+
+## 🧠 Notes
+All demo endpoints can be swapped for real APIs by updating `.env` with production keys.
