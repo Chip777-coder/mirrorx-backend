@@ -9,7 +9,25 @@ from src.routes.intel import intel_bp
 from src.routes.twitterRapid import twitter_bp
 # ----- Load RPCs (keeps your old /rpc-list behavior) -----
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
+# app.py or src/app.py
+from flask import Flask
+from flask_cors import CORS
 
+# Import your fusion blueprint
+from src.routes.fusion import fusion_bp  # ✅ make sure this path matches your folder
+
+app = Flask(__name__)
+CORS(app)
+
+# Register blueprints
+app.register_blueprint(fusion_bp, url_prefix="/api")
+
+@app.route("/")
+def home():
+    return "🚀 MirroraX backend is live!"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
 def load_rpc_urls():
     try:
         with open(RPC_FILE, "r") as f:
