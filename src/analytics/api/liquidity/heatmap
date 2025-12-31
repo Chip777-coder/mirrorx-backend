@@ -1,0 +1,10 @@
+@fusion_bp.route("/liquidity/heatmap", methods=["GET"])
+def liquidity_heatmap():
+    dex = get_dexscreener()
+    chains = {}
+    for token in dex:
+        chain = token.get("chainId", "unknown")
+        liq = token.get("liquidity", {}).get("usd", 0)
+        chains[chain] = chains.get(chain, 0) + liq
+    ranked = sorted(chains.items(), key=lambda x: x[1], reverse=True)
+    return jsonify({"heatmap": ranked})
