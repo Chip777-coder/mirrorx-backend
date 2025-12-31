@@ -11,10 +11,10 @@ def fusion_market_intel():
     cmc_data = get_cmc_listings()
     cc_data = get_crypto_compare()
 
-    # get optional search query param
+    # Optional query param that triggers DexScreener pair search
     search_query = request.args.get("search", "").strip()
 
-    # if user provided a search (like "SOL/USDC"), do targeted search
+    # Decide which DexScreener source to use
     if search_query:
         dex_data = fetch_pair_search(search_query)
     else:
@@ -25,23 +25,24 @@ def fusion_market_intel():
         symbol = t.get("symbol")
         cc = cc_data.get(symbol, {})
 
-        # find best matching dex result
+        # match based on tokens found in pair search or profiles list
         matched = []
         for d in dex_data:
-            # DexScreener pair search results have baseToken or quoteToken
             base = d.get("baseToken", {})
             quote = d.get("quoteToken", {})
             if base.get("symbol") == symbol or quote.get("symbol") == symbol:
                 matched.append(d)
+
         dex = matched[0] if matched else {}
 
-        # liquidity might be under different fields from DexScreener API
+        # Try to extract liquidity safely
         liquidity_usd = None
         if dex:
-            # try consolidated best fields
-            liquidity_usd = dex.get("liquidity", {}).get("usd") or \
-                            dex.get("liquidityUSD") or \
-                            dex.get("liquidity_usd")
+            liquidity_usd = (
+                dex.get("liquidity", {}).get("usd")
+                or dex.get("liquidityUSD")
+                or dex.get("liquidity_usd")
+            )
 
         unified.append({
             "symbol": symbol,
