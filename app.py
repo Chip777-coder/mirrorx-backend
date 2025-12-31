@@ -7,6 +7,11 @@ from src.routes.crypto import crypto_bp
 from src.routes.intel import intel_bp
 from src.routes.twitterRapid import twitter_bp
 from src.routes.fusion import fusion_bp
+from flask import Flask
+from src.routes.fusion import fusion_bp
+
+app = Flask(__name__)
+app.register_blueprint(fusion_bp, url_prefix="/api")
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
 
 def load_rpc_urls():
