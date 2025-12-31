@@ -1,0 +1,5 @@
+score = calculate_score(cc.get("change24h",0),
+                        t["quote"]["USD"]["volume_24h"],
+                        dex.get("liquidity",{}).get("usd",0),
+                        0)  # sentiment placeholder
+unified.append({...,"mirroraXScore":score})
