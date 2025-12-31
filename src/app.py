@@ -50,7 +50,9 @@ app.register_blueprint(fusion_bp, url_prefix="/api")
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
 app.register_blueprint(intel_bp, url_prefix="/intel")
 app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
-
+app.register_blueprint(crypto_bp, url_prefix="/crypto")
+app.register_blueprint(intel_bp, url_prefix="/intel")
+app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
 # ---- Conditional Blueprints ----
 try:
     from src.routes.rpc_status import rpc_status_bp
