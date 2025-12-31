@@ -1,17 +1,18 @@
-from flask import Blueprint, jsonify, request
+# src/routes/twitterRapid.py
+from flask import Blueprint, request, jsonify
+from src.services.twitterRapid import get_twitterRapid_likes
 
 twitter_bp = Blueprint("twitterRapid", __name__)
 
-@twitter_bp.route("/", methods=["GET"])
-def root():
-    return jsonify({"status": "TwitterRapid route active ✅"})
-
-@twitter_bp.route("/likes", methods=["GET"])
-def likes():
-    pid = request.args.get("pid", "unknown")
-    count = request.args.get("count", 5)
-    return jsonify({
-        "post_id": pid,
-        "likes": int(count),
-        "status": "TwitterRapid likes placeholder active"
-    })
+@twitter_bp.route("/api/twitterRapid/likes", methods=["GET"])
+def twitter_likes():
+    """
+    Fetch real Twitter-Rapid likes data from RapidAPI or mirror source.
+    """
+    try:
+        pid = request.args.get("pid", "mirrorx_trending")
+        count = int(request.args.get("count", 10))
+        data = get_twitterRapid_likes(pid, count)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
