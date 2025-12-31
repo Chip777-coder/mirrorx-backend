@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>MirroraX Fusion Stream</title>
+<style>
+ body { font-family: sans-serif; background:#0b0e12; color:#0ff; text-align:center; }
+ table { margin:1em auto; border-collapse:collapse; width:90%; max-width:800px; }
+ th,td { padding:8px 12px; border:1px solid #0ff; }
+ th { background:#021; }
+</style>
+</head>
+<body>
+<h2>🚀 MirroraX Live Fusion Intelligence</h2>
+<table id="fusionTable">
+<thead><tr><th>Symbol</th><th>Price ($)</th><th>24h Δ (%)</th><th>Liquidity ($)</th></tr></thead>
+<tbody></tbody>
+</table>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const socket = io(window.location.origin);
+socket.on('connect', ()=>console.log('Connected to MirroraX stream'));
+socket.on('fusion_update', data=>{
+  const arr = Array.isArray(data)?data:[]; const tbody=document.querySelector('#fusionTable tbody');
+  tbody.innerHTML = arr.map(t=>`
+    <tr><td>${t.symbol}</td><td>${t.price?.toFixed(4)||'-'}</td>
+    <td>${t.ccChange24h?.toFixed(2)||'-'}</td><td>${t.dexLiquidity?.toLocaleString()||'-'}</td></tr>
+  `).join('');
+});
+</script>
+</body>
+</html>
