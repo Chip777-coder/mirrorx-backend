@@ -3,19 +3,19 @@ import requests
 
 def get_dexscreener():
     """
-    Fetch live DEX Screener pairs safely.
-    Automatically supports the current /latest/dex/pairs endpoint.
-    Returns the full JSON structure or [] if failed.
+    Fetches the latest community takeover data from DexScreener.
+    This replaces the deprecated /latest/dex/pairs endpoint.
+    Returns [] if the API call fails.
     """
-    url = "https://api.dexscreener.com/latest/dex/pairs"
+    url = "https://api.dexscreener.com/community-takeovers/latest/v1"
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
         data = res.json()
-        # Normalize the structure so the rest of the code never breaks
-        if isinstance(data, dict) and "pairs" in data:
-            return data["pairs"]
-        return data
+        # DexScreener returns a list of token objects here
+        if isinstance(data, list):
+            return data
+        return []
     except Exception as e:
         print("DexScreener fetch error:", e)
         return []
