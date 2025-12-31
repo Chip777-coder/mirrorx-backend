@@ -1,19 +1,21 @@
 # src/services/dexscreener.py
 import requests
 
-def get_dexscreener():
+def get_dexscreener(chain_id: str = "solana"):
     """
-    Fetches the latest community takeover data from DexScreener.
-    This replaces the deprecated /latest/dex/pairs endpoint.
-    Returns [] if the API call fails.
+    Fetch live pair + liquidity data from DexScreener.
+    Uses the current /token-pairs/v1/{chainId}/{tokenAddress} structure,
+    but defaults to showing the latest global pairs feed for the chain.
     """
-    url = "https://api.dexscreener.com/community-takeovers/latest/v1"
+    url = f"https://api.dexscreener.com/latest/dex/pairs/{chain_id}"
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
         data = res.json()
-        # DexScreener returns a list of token objects here
-        if isinstance(data, list):
+        # Normalize to always return a list of pairs
+        if isinstance(data, dict) and "pairs" in data:
+            return data["pairs"]
+        elif isinstance(data, list):
             return data
         return []
     except Exception as e:
