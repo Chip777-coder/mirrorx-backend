@@ -1,7 +1,7 @@
 import requests
 
 def get_dexscreener():
-    url = "https://api.dexscreener.com/latest/dex/tokens"
+    url = "https://api.dexscreener.com/latest/dex/pairs"
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
