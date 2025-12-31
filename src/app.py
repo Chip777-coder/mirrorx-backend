@@ -1,36 +1,19 @@
 # src/app.py
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 import os
 import json
-from src.config import settings  # import once, from the src package
+
+# ---- Core Config ----
+from src.config import settings
 from src.routes.crypto import crypto_bp
 from src.routes.intel import intel_bp
 from src.routes.twitterRapid import twitter_bp
-# ----- Load RPCs (keeps your old /rpc-list behavior) -----
+from src.routes.fusion import fusion_bp  # ✅ Fusion blueprint
+
+# ---- Load RPCs ----
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
-# app.py or src/app.py
-from flask import Flask
-from flask_cors import CORS
 
-# Import your fusion blueprint
-from src.routes.fusion import fusion_bp  # ✅ make sure this path matches your folder
-
-app = Flask(__name__)
-CORS(app)
-from src.routes.fusion import fusion_bp
-
-# Register the Fusion blueprint
-app.register_blueprint(fusion_bp, url_prefix="/api")
-# Register blueprints
-app.register_blueprint(fusion_bp, url_prefix="/api")
-
-@app.route("/")
-def home():
-    return "🚀 MirroraX backend is live!"
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
 def load_rpc_urls():
     try:
         with open(RPC_FILE, "r") as f:
@@ -45,13 +28,14 @@ def load_rpc_urls():
 
 RPC_URLS = load_rpc_urls()
 
-# ----- App -----
+# ---- Initialize Flask ----
 app = Flask(__name__)
 CORS(app)
 
+# ---- Root Routes ----
 @app.route("/")
 def home():
-    return "MirrorX backend is live ✅"
+    return "🚀 MirroraX backend is live!"
 
 @app.route("/healthz")
 def healthz():
@@ -61,34 +45,41 @@ def healthz():
 def rpc_list():
     return jsonify(RPC_URLS)
 
-# ----- Blueprints -----
-from .routes.rpc_status import rpc_status_bp
-app.register_blueprint(rpc_status_bp, url_prefix="")
+# ---- Blueprints ----
+app.register_blueprint(fusion_bp, url_prefix="/api")
+app.register_blueprint(crypto_bp, url_prefix="/crypto")
+app.register_blueprint(intel_bp, url_prefix="/intel")
+app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
+
+# ---- Conditional Blueprints ----
+try:
+    from src.routes.rpc_status import rpc_status_bp
+    app.register_blueprint(rpc_status_bp, url_prefix="")
+except Exception as e:
+    print(f"[WARN] RPC Status route not loaded: {e}")
 
 if os.getenv("ENABLE_ALERT_INGEST", "0") == "1":
     try:
-        from .routes.alerts import alerts_bp
+        from src.routes.alerts import alerts_bp
         app.register_blueprint(alerts_bp, url_prefix="")
     except Exception as e:
         print(f"[WARN] Alerts failed to import: {e}")
 
 if os.getenv("ENABLE_AGENTS", "0") == "1":
     try:
-        from .routes.agents import agents_bp
+        from src.routes.agents import agents_bp
         app.register_blueprint(agents_bp, url_prefix="")
     except Exception as e:
         print(f"[WARN] Agents failed to import: {e}")
 
 if os.getenv("ENABLE_SMOKE", "0") == "1":
     try:
-        from .routes.smoke import smoke_bp
+        from src.routes.smoke import smoke_bp
         app.register_blueprint(smoke_bp, url_prefix="")
     except Exception as e:
         print(f"[WARN] Smoke failed to import: {e}")
-app.register_blueprint(crypto_bp, url_prefix="/crypto")
-app.register_blueprint(intel_bp, url_prefix="/intel")
-app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
-# ----- Test ENV endpoint -----
+
+# ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
     """Check which API keys are set without exposing full values."""
@@ -110,12 +101,12 @@ def test_env():
         "quicknode_wss": bool(settings.QUICKNODE_WSS),
     }
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=settings.PORT)
-from flask import send_from_directory
-import os
-
+# ---- Serve OpenAPI Spec ----
 @app.route("/openapi.json", methods=["GET"])
 def serve_openapi():
     """Serve OpenAPI schema for GPT Actions"""
     return send_from_directory(os.getcwd(), "openapi.json")
+
+# ---- Run Server ----
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=settings.PORT)
