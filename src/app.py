@@ -108,5 +108,9 @@ def serve_openapi():
     return send_from_directory(os.getcwd(), "openapi.json")
 
 # ---- Run Server ----
+@app.route("/fusion-dashboard", methods=["GET"])
+def serve_fusion_dashboard():
+    """Serve the real-time Fusion Intelligence dashboard"""
+    return send_from_directory(os.path.join(os.path.dirname(__file__), "analytics/ui"), "fusion_dashboard.html")
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=settings.PORT)
