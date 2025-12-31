@@ -1,6 +1,8 @@
 # src/realtime/fusion_stream.py
 from flask_socketio import SocketIO, emit
-import threading, time, requests, os, json
+import threading, time, requests, os
+from functools import lru_cache
+from src.alerts.fusion_broadcast import broadcast_fusion
 
 socketio = SocketIO(cors_allowed_origins="*")
 
@@ -12,31 +14,34 @@ def fetch_live_fusion():
         r = requests.get(API_URL, timeout=10)
         if r.status_code == 200:
             data = r.json().get("data", [])
-            # Pick top 5 by cmcVolume
             top = sorted(data, key=lambda x: x.get("cmcVolume", 0), reverse=True)[:5]
             return top
     except Exception as e:
         print(f"[WARN] Fusion API fetch failed: {e}")
     return []
 
+@lru_cache(maxsize=1)
+def cached_fetch_live_fusion():
+    """Cache fusion data for ~55 s to limit API calls."""
+    return fetch_live_fusion()
+
 def start_fusion_stream():
-    """Emit live data periodically, fallback to heartbeat if API fails."""
+    """Emit cached or live data every 60 s and push alerts."""
     def run():
         while True:
             try:
-                payload = fetch_live_fusion()
+                payload = cached_fetch_live_fusion()
                 if not payload:
-                    emit_data = {"status": "idle", "message": "No live data available."}
-                    socketio.emit("fusion_update", emit_data)
+                    socketio.emit("fusion_update", {"status": "idle", "message": "No live data available."})
                 else:
                     socketio.emit("fusion_update", payload)
-                # keep calls modest (1/minute)
+                    broadcast_fusion(payload[:3])   # send top 3 to Telegram/Discord
+                cached_fetch_live_fusion.cache_clear()
                 time.sleep(60)
             except Exception as e:
                 print(f"[WARN] Fusion stream loop error: {e}")
                 time.sleep(120)
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
+    threading.Thread(target=run, daemon=True).start()
 
 @socketio.on("connect")
 def handle_connect():
