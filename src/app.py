@@ -50,9 +50,11 @@ app.register_blueprint(fusion_bp, url_prefix="/api")
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
 app.register_blueprint(intel_bp, url_prefix="/intel")
 app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
-app.register_blueprint(crypto_bp, url_prefix="/crypto")
-app.register_blueprint(intel_bp, url_prefix="/intel")
-app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
+
+# ---- HealthCard Blueprint ----
+from src.routes.health_card import health_bp
+app.register_blueprint(health_bp)
+
 # ---- Conditional Blueprints ----
 try:
     from src.routes.rpc_status import rpc_status_bp
@@ -109,10 +111,12 @@ def serve_openapi():
     """Serve OpenAPI schema for GPT Actions"""
     return send_from_directory(os.getcwd(), "openapi.json")
 
-# ---- Run Server ----
+# ---- Fusion Dashboard UI ----
 @app.route("/fusion-dashboard", methods=["GET"])
 def serve_fusion_dashboard():
     """Serve the real-time Fusion Intelligence dashboard"""
     return send_from_directory(os.path.join(os.path.dirname(__file__), "analytics/ui"), "fusion_dashboard.html")
+
+# ---- Run Server ----
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=settings.PORT)
