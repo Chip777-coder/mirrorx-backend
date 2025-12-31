@@ -1,36 +1,46 @@
 # src/realtime/fusion_stream.py
 from flask_socketio import SocketIO, emit
-import threading, time, random, json
+import threading, time, requests, os, json
 
-# Initialize SocketIO (no async mode conflicts)
 socketio = SocketIO(cors_allowed_origins="*")
 
-# --- Demo Data Streamer ---
+API_URL = os.getenv("FUSION_API_URL", "https://mirrorx-backend.onrender.com/api/fusion/market-intel")
+
+def fetch_live_fusion():
+    """Fetch live MirroraX fusion market data (top 5)."""
+    try:
+        r = requests.get(API_URL, timeout=10)
+        if r.status_code == 200:
+            data = r.json().get("data", [])
+            # Pick top 5 by cmcVolume
+            top = sorted(data, key=lambda x: x.get("cmcVolume", 0), reverse=True)[:5]
+            return top
+    except Exception as e:
+        print(f"[WARN] Fusion API fetch failed: {e}")
+    return []
+
 def start_fusion_stream():
-    """Background thread that emits simulated fusion updates every few seconds."""
+    """Emit live data periodically, fallback to heartbeat if API fails."""
     def run():
         while True:
             try:
-                # Replace this block later with live fusion aggregation logic
-                payload = {
-                    "symbol": random.choice(["SOL", "BONK", "WIF", "JUP", "DOGWIFHAT"]),
-                    "mirroraXScore": round(random.uniform(50, 99), 2),
-                    "volume": round(random.uniform(1_000_000, 50_000_000), 2),
-                    "socialVelocity": round(random.uniform(0.1, 5.0), 2),
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-                }
-                socketio.emit("fusion_update", payload, broadcast=True)
-                time.sleep(5)
+                payload = fetch_live_fusion()
+                if not payload:
+                    emit_data = {"status": "idle", "message": "No live data available."}
+                    socketio.emit("fusion_update", emit_data)
+                else:
+                    socketio.emit("fusion_update", payload)
+                # keep calls modest (1/minute)
+                time.sleep(60)
             except Exception as e:
-                print(f"[WARN] Fusion stream error: {e}")
-                time.sleep(10)
+                print(f"[WARN] Fusion stream loop error: {e}")
+                time.sleep(120)
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
 
-# --- Socket Events ---
 @socketio.on("connect")
 def handle_connect():
-    emit("fusion_status", {"status": "connected", "message": "🔗 Fusion stream active."})
+    emit("fusion_status", {"status": "connected", "message": "🔗 Live MirroraX feed active."})
     print("[SocketIO] Client connected")
 
 @socketio.on("disconnect")
