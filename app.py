@@ -6,7 +6,7 @@ from src.config import settings
 from src.routes.crypto import crypto_bp
 from src.routes.intel import intel_bp
 from src.routes.twitterRapid import twitter_bp
-
+from src.routes.fusion import fusion_bp
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
 
 def load_rpc_urls():
