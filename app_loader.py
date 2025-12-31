@@ -2,7 +2,8 @@
 # app_loader.py (v3 - Final Fix)
 import sys, os
 from importlib import import_module
-
+from src.realtime.fusion_stream import socketio
+socketio.init_app(app)
 # Ensure both possible paths are importable
 base_dir = os.path.dirname(os.path.abspath(__file__))
 src_path = os.path.join(base_dir, "src")
