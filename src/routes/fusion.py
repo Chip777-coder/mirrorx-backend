@@ -1,3 +1,4 @@
+from src.routes.fusion import fusion_bp
 from flask import Blueprint, jsonify
 from src.services.coinmarketcap import get_cmc_listings
 from src.services.cryptocompare import get_crypto_compare
