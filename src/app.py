@@ -18,7 +18,10 @@ from src.routes.fusion import fusion_bp  # ✅ make sure this path matches your 
 
 app = Flask(__name__)
 CORS(app)
+from src.routes.fusion import fusion_bp
 
+# Register the Fusion blueprint
+app.register_blueprint(fusion_bp, url_prefix="/api")
 # Register blueprints
 app.register_blueprint(fusion_bp, url_prefix="/api")
 
