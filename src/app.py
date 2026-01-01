@@ -86,6 +86,8 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
         print(f"[WARN] Smoke failed to import: {e}")
 from src.routes.signal_history import signal_history_bp
 app.register_blueprint(signal_history_bp, url_prefix="/api")
+from src.routes.signals_history import signals_history_bp
+app.register_blueprint(signals_history_bp)
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
