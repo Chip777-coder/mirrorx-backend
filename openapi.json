@@ -3,7 +3,7 @@
   "info": {
     "title": "MirroraX Intelligence API",
     "version": "1.0.0",
-    "description": "Provides live market, social, and intelligence data for the MirroraX GPT."
+    "description": "Provides live market, social, and intelligence data for the MirroraX GPT — including Fusion, Alpha Signals, and system health endpoints."
   },
   "servers": [
     { "url": "https://mirrorx-backend.onrender.com" }
@@ -13,28 +13,49 @@
       "get": {
         "summary": "Check system health",
         "operationId": "get_healthz",
-        "responses": { "200": { "description": "Health status" } }
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {
+              "application/json": {
+                "example": { "ok": true }
+              }
+            }
+          }
+        }
       }
     },
     "/crypto/solana": {
       "get": {
         "summary": "Fetch Solana ecosystem market data",
         "operationId": "get_crypto_solana",
-        "responses": { "200": { "description": "List of Solana tokens and metrics" } }
+        "responses": {
+          "200": {
+            "description": "List of Solana tokens and metrics"
+          }
+        }
       }
     },
     "/intel/summary": {
       "get": {
         "summary": "Fetch summarized intelligence data",
         "operationId": "get_intel_summary",
-        "responses": { "200": { "description": "Summarized crypto and social intelligence" } }
+        "responses": {
+          "200": {
+            "description": "Summarized crypto and social intelligence"
+          }
+        }
       }
     },
     "/intel/full": {
       "get": {
         "summary": "Fetch full intelligence dataset",
         "operationId": "get_intel_full",
-        "responses": { "200": { "description": "Comprehensive intelligence data" } }
+        "responses": {
+          "200": {
+            "description": "Comprehensive intelligence data"
+          }
+        }
       }
     },
     "/twitterRapid/likes": {
@@ -42,10 +63,38 @@
         "summary": "Fetch Twitter likes using RapidAPI",
         "operationId": "get_twitterRapid_likes",
         "parameters": [
-          { "name": "pid", "in": "query", "schema": { "type": "string" }, "required": true },
-          { "name": "count", "in": "query", "schema": { "type": "integer" }, "required": false }
+          {
+            "name": "pid",
+            "in": "query",
+            "schema": { "type": "string" },
+            "required": true,
+            "description": "Twitter post ID"
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "required": false,
+            "description": "Number of likes to retrieve"
+          }
         ],
-        "responses": { "200": { "description": "List of recent likes" } }
+        "responses": {
+          "200": {
+            "description": "List of recent likes",
+            "content": {
+              "application/json": {
+                "example": {
+                  "postId": "mirrorx_demo_post",
+                  "likesCount": 5,
+                  "users": [
+                    { "username": "solana_alpha" },
+                    { "username": "bonk_whale" }
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/status": {
@@ -61,7 +110,11 @@
                 "example": {
                   "system": "MirrorX Intelligence API",
                   "overall_status": "operational",
-                  "healthy_services": ["fusion_market", "intel_summary", "twitter_likes"],
+                  "healthy_services": [
+                    "fusion_market",
+                    "intel_summary",
+                    "twitter_likes"
+                  ],
                   "degraded_services": [],
                   "uptime_signal": 1.0
                 }
@@ -70,37 +123,61 @@
           }
         }
       }
-    }
-  }
-}
-"/signals/alpha": {
-  "get": {
-    "summary": "Get ranked MirrorX alpha signals",
-    "operationId": "get_alpha_signals",
-    "description": "Aggregates liquidity, momentum, and social metrics into top 10 ranked alpha opportunities.",
-    "responses": {
-      "200": {
-        "description": "Ranked alpha signal list",
-        "content": {
-          "application/json": {
-            "example": {
-              "system": "MirrorX Alpha Signal Engine",
-              "status": "operational",
-              "total_tokens_scanned": 50,
-              "top_signals": [
-                {
-                  "symbol": "BONK",
-                  "alpha_score": 8.77,
-                  "liquidity_usd": 1200000,
-                  "volume_24h": 500000,
-                  "price_change_24h": 7.2,
-                  "social_boost": 1.3
+    },
+    "/api/signals/alpha": {
+      "get": {
+        "summary": "Get ranked MirrorX alpha signals",
+        "operationId": "get_alpha_signals",
+        "description": "Aggregates liquidity, momentum, sentiment, and social metrics into top 10 ranked alpha opportunities.",
+        "responses": {
+          "200": {
+            "description": "Ranked alpha signal list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AlphaSignalResponse" },
+                "example": {
+                  "system": "MirrorX Alpha Signal Engine v2",
+                  "status": "operational",
+                  "total_tokens_scanned": 50,
+                  "top_signals": [
+                    {
+                      "symbol": "SOL",
+                      "alpha_score": 8.72,
+                      "liquidity_usd": 1250000,
+                      "volume_24h": 760000,
+                      "price_change_24h": 3.2,
+                      "sentiment": 1.3,
+                      "social_boost": 1.1
+                    },
+                    {
+                      "symbol": "BONK",
+                      "alpha_score": 7.65,
+                      "liquidity_usd": 940000,
+                      "volume_24h": 580000,
+                      "price_change_24h": 4.1,
+                      "sentiment": 1.1,
+                      "social_boost": 1.2
+                    }
+                  ]
                 }
-              ]
+              }
             }
           }
         }
       }
-    }
-  }
-}
+    },
+    "/api/signals/history": {
+      "get": {
+        "summary": "Get alpha signal history",
+        "operationId": "get_signal_history",
+        "description": "Returns stored historical snapshots of previous alpha signal calculations for trend and performance analysis.",
+        "responses": {
+          "200": {
+            "description": "Array of historical signal snapshots",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AlphaSignalHistory" },
+                "example": {
+                  "records": [
+                    {
+                      "timestamp
