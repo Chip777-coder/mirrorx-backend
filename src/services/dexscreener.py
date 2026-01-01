@@ -34,3 +34,11 @@ def fetch_token_profiles():
     except Exception as e:
         print("DexScreener token profiles fetch error:", e)
         return []
+# Add at the bottom of src/services/dexscreener.py
+
+def get_dexscreener(query: str = ""):
+    """
+    Legacy wrapper for backward compatibility.
+    Uses fetch_pair_search if query provided, else fetch_token_profiles.
+    """
+    return fetch_pair_search(query) if query else fetch_token_profiles()
