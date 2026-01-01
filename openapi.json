@@ -73,3 +73,34 @@
     }
   }
 }
+"/signals/alpha": {
+  "get": {
+    "summary": "Get ranked MirrorX alpha signals",
+    "operationId": "get_alpha_signals",
+    "description": "Aggregates liquidity, momentum, and social metrics into top 10 ranked alpha opportunities.",
+    "responses": {
+      "200": {
+        "description": "Ranked alpha signal list",
+        "content": {
+          "application/json": {
+            "example": {
+              "system": "MirrorX Alpha Signal Engine",
+              "status": "operational",
+              "total_tokens_scanned": 50,
+              "top_signals": [
+                {
+                  "symbol": "BONK",
+                  "alpha_score": 8.77,
+                  "liquidity_usd": 1200000,
+                  "volume_24h": 500000,
+                  "price_change_24h": 7.2,
+                  "social_boost": 1.3
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
