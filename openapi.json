@@ -47,6 +47,29 @@
         ],
         "responses": { "200": { "description": "List of recent likes" } }
       }
+    },
+    "/status": {
+      "get": {
+        "summary": "Get unified MirrorX system status",
+        "operationId": "get_status",
+        "description": "Returns overall MirrorX system health, endpoint availability, and uptime signal.",
+        "responses": {
+          "200": {
+            "description": "System health snapshot",
+            "content": {
+              "application/json": {
+                "example": {
+                  "system": "MirrorX Intelligence API",
+                  "overall_status": "operational",
+                  "healthy_services": ["fusion_market", "intel_summary", "twitter_likes"],
+                  "degraded_services": [],
+                  "uptime_signal": 1.0
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
