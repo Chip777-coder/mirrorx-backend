@@ -55,7 +55,8 @@ app.register_blueprint(status_bp, url_prefix="/api")
 # ---- HealthCard Blueprint ----
 from src.routes.health_card import health_bp
 app.register_blueprint(health_bp)
-
+from src.routes.signals import signals_bp
+app.register_blueprint(signals_bp, url_prefix="/api")
 # ---- Conditional Blueprints ----
 try:
     from src.routes.rpc_status import rpc_status_bp
