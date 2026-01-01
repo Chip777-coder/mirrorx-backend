@@ -2,21 +2,23 @@
 """
 MirrorX Alpha Signals Route (v2)
 Aggregates on-chain, market, and social data into ranked alpha signals.
-Now includes caching, sentiment enrichment, and Telegram broadcast support.
+Now includes caching, sentiment enrichment, Telegram broadcast, and history logging.
 """
 
 from flask import Blueprint, jsonify
 import requests
 import math
 
-# ✅ new imports for caching, sentiment, and Telegram alerts
+# ✅ new imports for caching, sentiment, Telegram, and history logging
 from src.services.cache import get_cache, set_cache
 from src.services.sentiment import fetch_sentiment_scores
 from src.alerts.telegram_bot import send_alpha_alert
+from src.routes.signals_history import log_alpha_snapshot  # <-- NEW import
 
 signals_bp = Blueprint("signals_bp", __name__)
 
 BASE_URL = "https://mirrorx-backend.onrender.com"
+
 
 def safe_get(endpoint, fallback=None):
     """Helper for safe API requests"""
@@ -27,6 +29,7 @@ def safe_get(endpoint, fallback=None):
     except Exception:
         pass
     return fallback or {}
+
 
 @signals_bp.route("/signals/alpha", methods=["GET"])
 def get_alpha_signals():
@@ -95,14 +98,22 @@ def get_alpha_signals():
     # Sort signals by strength
     ranked = sorted(signals, key=lambda x: x["alpha_score"], reverse=True)[:10]
 
-    # ✅ Step 3: Cache result
+    # ✅ Prepare final result
     result = {
         "system": "MirrorX Alpha Signal Engine v2",
         "status": "operational",
         "total_tokens_scanned": len(signals),
         "top_signals": ranked
     }
+
+    # ✅ Step 3: Cache result
     set_cache("alpha_signals", result)
+
+    # ✅ Step 7: Log snapshot to history
+    try:
+        log_alpha_snapshot(result)
+    except Exception as e:
+        print("Alpha snapshot logging failed:", e)
 
     # ✅ Step 7: Telegram broadcast (only if configured)
     try:
