@@ -50,7 +50,8 @@ app.register_blueprint(fusion_bp, url_prefix="/api")
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
 app.register_blueprint(intel_bp, url_prefix="/intel")
 app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
-
+from src.routes.status import status_bp
+app.register_blueprint(status_bp, url_prefix="/api")
 # ---- HealthCard Blueprint ----
 from src.routes.health_card import health_bp
 app.register_blueprint(health_bp)
