@@ -101,6 +101,10 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
         print(f"[WARN] Smoke failed to import: {e}")
 from src.routes.alerts_test import alerts_test_bp
 app.register_blueprint(alerts_test_bp)
+from src.services.alpha_detector import push_alpha_alerts
+
+print("[SCHEDULER] Running Alpha Detector...")
+push_alpha_alerts()
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
