@@ -53,14 +53,14 @@ def rpc_list():
 # ==================================================================
 # ✅ BLUEPRINT REGISTRATION
 # ------------------------------------------------------------------
-# Added dual-mounting for GPT compatibility: each blueprint is now
-# available under both /api/... and the root path GPT expects.
+# Dual-mounting for GPT compatibility: most blueprints available under
+# both /api/... and the root path where relevant.
 # ==================================================================
 
 # Fusion: keep only /api (GPT doesn't call it directly)
 app.register_blueprint(fusion_bp, url_prefix="/api")
 
-# Crypto: serve under both /crypto/* and /api/crypto/* (GPT compatibility)
+# Crypto: serve under both /crypto/* and /api/crypto/*
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
 app.register_blueprint(crypto_bp, url_prefix="/api/crypto", name="crypto_api")
 
@@ -166,7 +166,6 @@ def serve_fusion_dashboard():
         "fusion_dashboard.html"
     )
 
-
 # ---- Automated Trend Scheduler ----
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
@@ -191,7 +190,7 @@ def trigger_trends_job():
         print("[SCHEDULER] → Running Alpha Fusion (DEX + Fusion layer)…")
         push_fused_alpha_alerts()
 
-        # 3️⃣ Trigger legacy trend job (optional)
+        # 3️⃣ Trigger trend engine endpoint
         res = requests.get("https://mirrorx-backend.onrender.com/api/signals/trends", timeout=20)
         print(f"[SCHEDULER] Trend job response: {res.status_code}")
 
@@ -208,7 +207,6 @@ def start_scheduler():
     print("✅ MirrorX Unified Scheduler initialized (runs every 3 hours).")
 
 
-# Run the scheduler after app creation
 threading.Thread(target=start_scheduler).start()
 
 # ---- Run Server ----
