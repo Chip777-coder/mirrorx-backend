@@ -55,8 +55,9 @@ def rpc_list():
 # Fusion: keep only /api (GPT doesn't call it directly)
 app.register_blueprint(fusion_bp, url_prefix="/api")
 
-# Crypto
+# Crypto: serve under both /crypto/* and /api/crypto/* (GPT compatibility)
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
+app.register_blueprint(crypto_bp, url_prefix="/api/crypto", name="crypto_api")
 
 # Intelligence: serve under both /intel/* and /api/intel/*
 app.register_blueprint(intel_bp, url_prefix="/intel")
