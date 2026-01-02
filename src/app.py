@@ -109,6 +109,8 @@ def test_env():
         "quicknode_http": bool(settings.QUICKNODE_HTTP),
         "quicknode_wss": bool(settings.QUICKNODE_WSS),
     }
+    from src.routes.signals_trends import signals_trends_bp
+app.register_blueprint(signals_trends_bp)
 
 # ---- Serve OpenAPI Spec ----
 @app.route("/openapi.json", methods=["GET"])
