@@ -55,17 +55,17 @@ def rpc_list():
 # Fusion: keep only /api (GPT doesn't call it directly)
 app.register_blueprint(fusion_bp, url_prefix="/api")
 
-# Crypto: fine as /crypto/solana
+# Crypto
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
+
 # Intelligence: serve under both /intel/* and /api/intel/*
 app.register_blueprint(intel_bp, url_prefix="/intel")
 app.register_blueprint(intel_bp, url_prefix="/api/intel", name="intel_api")
 
 # TwitterRapid: serve under both /twitterRapid/* and /api/twitterRapid/*
 app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
-# TwitterRapid: serve under both /twitterRapid/* and /api/twitterRapid/*
-app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
 app.register_blueprint(twitter_bp, url_prefix="/api/twitterRapid", name="twitterRapid_api")
+
 # ---- Status and HealthCard ----
 from src.routes.status import status_bp
 app.register_blueprint(status_bp, url_prefix="/api")
