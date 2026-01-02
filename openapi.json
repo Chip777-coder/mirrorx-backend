@@ -1,209 +1,426 @@
-{
-  "openapi": "3.1.0",
-  "info": {
-    "title": "MirroraX Intelligence API",
-    "version": "1.0.0",
-    "description": "Provides live market, social, and intelligence data for the MirroraX GPT — including Fusion, Alpha Signals, and system health endpoints."
-  },
-  "servers": [
-    { "url": "https://mirrorx-backend.onrender.com" }
-  ],
-  "paths": {
-    "/healthz": {
-      "get": {
-        "summary": "Check system health",
-        "operationId": "get_healthz",
-        "responses": {
-          "200": {
-            "description": "Health status",
-            "content": {
-              "application/json": {
-                "example": { "ok": true }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/crypto/solana": {
-      "get": {
-        "summary": "Fetch Solana ecosystem market data",
-        "operationId": "get_crypto_solana",
-        "responses": {
-          "200": {
-            "description": "List of Solana tokens and metrics"
-          }
-        }
-      }
-    },
-    "/intel/summary": {
-      "get": {
-        "summary": "Fetch summarized intelligence data",
-        "operationId": "get_intel_summary",
-        "responses": {
-          "200": {
-            "description": "Summarized crypto and social intelligence"
-          }
-        }
-      }
-    },
-    "/intel/full": {
-      "get": {
-        "summary": "Fetch full intelligence dataset",
-        "operationId": "get_intel_full",
-        "responses": {
-          "200": {
-            "description": "Comprehensive intelligence data"
-          }
-        }
-      }
-    },
-    "/twitterRapid/likes": {
-      "get": {
-        "summary": "Fetch Twitter likes using RapidAPI",
-        "operationId": "get_twitterRapid_likes",
-        "parameters": [
-          {
-            "name": "pid",
-            "in": "query",
-            "schema": { "type": "string" },
-            "required": true,
-            "description": "Twitter post ID"
-          },
-          {
-            "name": "count",
-            "in": "query",
-            "schema": { "type": "integer" },
-            "required": false,
-            "description": "Number of likes to retrieve"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of recent likes",
-            "content": {
-              "application/json": {
-                "example": {
-                  "postId": "mirrorx_demo_post",
-                  "likesCount": 5,
-                  "users": [
-                    { "username": "solana_alpha" },
-                    { "username": "bonk_whale" }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/status": {
-      "get": {
-        "summary": "Get unified MirrorX system status",
-        "operationId": "get_status",
-        "description": "Returns overall MirrorX system health, endpoint availability, and uptime signal.",
-        "responses": {
-          "200": {
-            "description": "System health snapshot",
-            "content": {
-              "application/json": {
-                "example": {
-                  "system": "MirrorX Intelligence API",
-                  "overall_status": "operational",
-                  "healthy_services": [
-                    "fusion_market",
-                    "intel_summary",
-                    "twitter_likes"
-                  ],
-                  "degraded_services": [],
-                  "uptime_signal": 1.0
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/signals/alpha": {
-      "get": {
-        "summary": "Get ranked MirrorX alpha signals",
-        "operationId": "get_alpha_signals",
-        "description": "Aggregates liquidity, momentum, sentiment, and social metrics into top 10 ranked alpha opportunities.",
-        "responses": {
-          "200": {
-            "description": "Ranked alpha signal list",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/AlphaSignalResponse" },
-                "example": {
-                  "system": "MirrorX Alpha Signal Engine v2",
-                  "status": "operational",
-                  "total_tokens_scanned": 50,
-                  "top_signals": [
-                    {
-                      "symbol": "SOL",
-                      "alpha_score": 8.72,
-                      "liquidity_usd": 1250000,
-                      "volume_24h": 760000,
-                      "price_change_24h": 3.2,
-                      "sentiment": 1.3,
-                      "social_boost": 1.1
-                    },
-                    {
-                      "symbol": "BONK",
-                      "alpha_score": 7.65,
-                      "liquidity_usd": 940000,
-                      "volume_24h": 580000,
-                      "price_change_24h": 4.1,
-                      "sentiment": 1.1,
-                      "social_boost": 1.2
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/signals/history": {
-      "get": {
-        "summary": "Get alpha signal history",
-        "operationId": "get_signal_history",
-        "description": "Returns stored historical snapshots of previous alpha signal calculations for trend and performance analysis.",
-        "responses": {
-          "200": {
-            "description": "Array of historical signal snapshots",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/AlphaSignalHistory" },
-                "example": {
-                  "records": [
-                    {
-                      "timestamp
-"/signals/trends": {
-  "get": {
-    "summary": "Analyze MirrorX alpha signal trends",
-    "operationId": "get_signal_trends",
-    "description": "Identifies emerging and fading tokens by comparing historical alpha signal snapshots.",
-    "responses": {
-      "200": {
-        "description": "List of emerging and fading tokens",
-        "content": {
-          "application/json": {
-            "example": {
-              "system": "MirrorX Alpha Trend Engine",
-              "status": "operational",
-              "emerging": [
-                { "symbol": "BONK", "trend_pct": "+18.2%", "momentum": "rising" }
-              ],
-              "fading": [
-                { "symbol": "SOL", "trend_pct": "-7.1%", "momentum": "falling" }
-              ]
-            }
-          }
-        }
-      }
-    }
-  }
-}
+openapi: 3.1.0
+info:
+  title: MirroraX Intelligence API
+  version: 1.0.0
+  description: >
+    Provides live market, social, and intelligence data for the MirroraX GPT —
+    including Fusion, Alpha Signals, and system health endpoints.
+servers:
+  - url: https://mirrorx-backend.onrender.com
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Check system health
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
+                additionalProperties: true
+              example:
+                ok: true
+
+  /status:
+    get:
+      operationId: getStatus
+      summary: Get unified MirrorX system status
+      description: Returns overall MirrorX system health, endpoint availability, and uptime signal.
+      responses:
+        "200":
+          description: System health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatus"
+              example:
+                system: MirrorX Intelligence API
+                overall_status: operational
+                healthy_services:
+                  - fusion_market
+                  - intel_summary
+                  - twitter_likes
+                degraded_services: []
+                uptime_signal: 1.0
+
+  /api/fusion/market-intel:
+    get:
+      operationId: getFusionMarketIntel
+      summary: Fetch Fusion market intel (market + solana ecosystem + socials)
+      description: >
+        Unified Fusion endpoint observed as live (HTTP 200 in server logs).
+        Use this in place of /crypto/solana which currently returns 404.
+      responses:
+        "200":
+          description: Fusion market intel payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FusionMarketIntelResponse"
+
+  /intel/summary:
+    get:
+      operationId: getIntelSummary
+      summary: Fetch summarized intelligence data
+      responses:
+        "200":
+          description: Summarized crypto and social intelligence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntelSummaryResponse"
+
+  /intel/full:
+    get:
+      operationId: getIntelFull
+      summary: Fetch full intelligence dataset
+      responses:
+        "200":
+          description: Comprehensive intelligence data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntelFullResponse"
+
+  /twitterRapid/likes:
+    get:
+      operationId: getTwitterRapidLikes
+      summary: Fetch Twitter likes using RapidAPI
+      parameters:
+        - name: pid
+          in: query
+          required: true
+          description: Twitter post ID
+          schema:
+            type: string
+        - name: count
+          in: query
+          required: false
+          description: Number of likes to retrieve
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: List of recent likes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwitterLikesResponse"
+              example:
+                postId: mirrorx_demo_post
+                likesCount: 5
+                users:
+                  - username: solana_alpha
+                  - username: bonk_whale
+
+  /api/signals/alpha:
+    get:
+      operationId: getAlphaSignals
+      summary: Get ranked MirrorX alpha signals
+      description: Aggregates liquidity, momentum, sentiment, and social metrics into top 10 ranked alpha opportunities.
+      responses:
+        "200":
+          description: Ranked alpha signal list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlphaSignalResponse"
+
+  /api/signals/history:
+    get:
+      operationId: getSignalHistory
+      summary: Get alpha signal history
+      description: Returns stored historical snapshots of previous alpha signal calculations for trend and performance analysis.
+      responses:
+        "200":
+          description: Array of historical signal snapshots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlphaSignalHistory"
+
+  /signals/trends:
+    get:
+      operationId: getSignalTrends
+      summary: Analyze MirrorX alpha signal trends
+      description: Identifies emerging and fading tokens by comparing historical alpha signal snapshots.
+      responses:
+        "200":
+          description: List of emerging and fading tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlphaTrendResponse"
+
+components:
+  schemas:
+    # ---- Core system schemas ----
+    SystemStatus:
+      type: object
+      properties:
+        system:
+          type: string
+        overall_status:
+          type: string
+        healthy_services:
+          type: array
+          items: { type: string }
+        degraded_services:
+          type: array
+          items: { type: string }
+        uptime_signal:
+          type: number
+      additionalProperties: true
+
+    # ---- Fusion ----
+    FusionMarketIntelResponse:
+      type: object
+      description: Unified market intel payload (shape may evolve).
+      properties:
+        system:
+          type: string
+        status:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          description: Provider payload container.
+          properties:
+            solana:
+              type: object
+              properties:
+                tokens:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      symbol: { type: string }
+                      name: { type: string }
+                      price_usd: { type: number }
+                      market_cap_usd: { type: number }
+                      volume_24h_usd: { type: number }
+                      price_change_24h_pct: { type: number }
+                    additionalProperties: true
+              additionalProperties: true
+            market:
+              type: object
+              properties:
+                narrative: { type: string }
+              additionalProperties: true
+            social:
+              type: object
+              properties:
+                narrative: { type: string }
+              additionalProperties: true
+          additionalProperties: true
+      additionalProperties: true
+
+    # ---- Intel ----
+    IntelSummaryResponse:
+      type: object
+      properties:
+        system:
+          type: string
+        status:
+          type: string
+        highlights:
+          type: array
+          items: { type: string }
+        market:
+          type: object
+          properties:
+            narrative: { type: string }
+            risk_level: { type: string }
+            notable_tokens:
+              type: array
+              items: { type: string }
+          additionalProperties: true
+        social:
+          type: object
+          properties:
+            narrative: { type: string }
+            trending_topics:
+              type: array
+              items: { type: string }
+          additionalProperties: true
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: true
+
+    IntelFullResponse:
+      type: object
+      properties:
+        system:
+          type: string
+        status:
+          type: string
+        market:
+          type: object
+          properties:
+            tokens:
+              type: array
+              items:
+                type: object
+                properties:
+                  symbol: { type: string }
+                  metrics:
+                    type: object
+                    properties:
+                      price_usd: { type: number }
+                      liquidity_usd: { type: number }
+                      volume_24h_usd: { type: number }
+                      price_change_24h_pct: { type: number }
+                    additionalProperties: true
+                additionalProperties: true
+            sectors:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  summary: { type: string }
+                additionalProperties: true
+          additionalProperties: true
+        social:
+          type: object
+          properties:
+            influencers:
+              type: array
+              items:
+                type: object
+                properties:
+                  username: { type: string }
+                  score: { type: number }
+                additionalProperties: true
+            posts:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  text: { type: string }
+                  created_at:
+                    type: string
+                    format: date-time
+                additionalProperties: true
+          additionalProperties: true
+        raw:
+          type: object
+          description: Optional raw provider payload passthrough.
+          properties:
+            payload:
+              type: object
+              properties:
+                _:
+                  type: string
+                  description: Placeholder to satisfy schema validators; payload is free-form.
+              additionalProperties: true
+          additionalProperties: true
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: true
+
+    # ---- Twitter likes ----
+    TwitterLikesUser:
+      type: object
+      properties:
+        username:
+          type: string
+      additionalProperties: true
+
+    TwitterLikesResponse:
+      type: object
+      properties:
+        postId:
+          type: string
+        likesCount:
+          type: integer
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/TwitterLikesUser"
+      additionalProperties: true
+
+    # ---- Alpha signals ----
+    AlphaSignal:
+      type: object
+      properties:
+        symbol: { type: string }
+        alpha_score: { type: number }
+        liquidity_usd: { type: number }
+        volume_24h: { type: number }
+        price_change_24h: { type: number }
+        sentiment: { type: number }
+        social_boost: { type: number }
+      additionalProperties: true
+
+    AlphaSignalResponse:
+      type: object
+      properties:
+        system: { type: string }
+        status: { type: string }
+        total_tokens_scanned: { type: integer }
+        top_signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlphaSignal"
+      additionalProperties: true
+
+    AlphaSignalSnapshot:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        system: { type: string }
+        status: { type: string }
+        total_tokens_scanned: { type: integer }
+        top_signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlphaSignal"
+      additionalProperties: true
+
+    AlphaSignalHistory:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlphaSignalSnapshot"
+      additionalProperties: true
+
+    AlphaTrendItem:
+      type: object
+      properties:
+        symbol: { type: string }
+        trend_pct: { type: string }
+        momentum: { type: string }
+      additionalProperties: true
+
+    AlphaTrendResponse:
+      type: object
+      properties:
+        system: { type: string }
+        status: { type: string }
+        emerging:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlphaTrendItem"
+        fading:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlphaTrendItem"
+      additionalProperties: true
