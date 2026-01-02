@@ -207,7 +207,11 @@ def start_scheduler():
     print("✅ MirrorX Unified Scheduler initialized (runs every 3 hours).")
 
 
-threading.Thread(target=start_scheduler).start()
+# Run the scheduler after app creation (only if enabled)
+if os.getenv("ENABLE_SCHEDULER", "0") == "1":
+    threading.Thread(target=start_scheduler).start()
+else:
+    print("⚠️ Scheduler disabled (set ENABLE_SCHEDULER=1 to enable).")
 
 # ---- Run Server ----
 if __name__ == "__main__":
