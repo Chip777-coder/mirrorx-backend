@@ -6,7 +6,7 @@ status_bp = Blueprint("status_bp", __name__)
 
 # Define the core endpoints we want to monitor
 ENDPOINTS = {
-    "healthz": "/api/healthz",
+    "healthz": "/healthz",  # ✅ FIXED: healthz is a root route
     "fusion_market": "/api/fusion/market-intel",
     "intel_summary": "/api/intel/summary",
     "intel_full": "/api/intel/full",
