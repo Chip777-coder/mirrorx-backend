@@ -198,7 +198,18 @@ def start_scheduler():
 
 # Run the scheduler after app creation
 threading.Thread(target=start_scheduler).start()
+@app.route("/openapi.json", methods=["GET"])
+def serve_openapi():
+    """Serve the OpenAPI schema for GPT Actions."""
+    import os
+    from flask import send_from_directory, jsonify
 
+    base_dir = os.path.dirname(os.path.dirname(__file__))  # one level above /src
+    file_path = os.path.join(base_dir, "openapi.json")
+
+    if os.path.exists(file_path):
+        return send_from_directory(base_dir, "openapi.json")
+    return jsonify({"error": "openapi.json not found"}), 404
 # ---- Run Server ----
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=settings.PORT)
