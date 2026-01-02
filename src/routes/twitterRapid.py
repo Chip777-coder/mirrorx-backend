@@ -4,7 +4,7 @@ from src.services.twitterRapid import get_twitterRapid_likes
 
 twitter_bp = Blueprint("twitterRapid", __name__)
 
-@twitter_bp.route("/api/twitterRapid/likes", methods=["GET"])
+@twitter_bp.route("/likes", methods=["GET"])
 def twitter_likes():
     """
     Fetch real Twitter-Rapid likes data from RapidAPI or mirror source.
