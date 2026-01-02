@@ -71,7 +71,46 @@ def detect_alpha_tokens(symbols=None):
         pairs = fetch_token_data(sym)
         detected += analyze_pairs(pairs)
     return sorted(detected, key=lambda x: x["change_1h"] + x["change_24h"], reverse=True)
+def generate_alpha_summary(token):
+    """
+    Creates a dynamic, human-readable narrative for Telegram alerts.
+    Example: "BONK surged 280% in 3h with $3M inflow across Raydium."
+    """
 
+    sym = token["symbol"]
+    change_1h = token.get("change_1h", 0)
+    change_24h = token.get("change_24h", 0)
+    volume = token.get("volume", 0)
+    dex = token.get("dex", "Unknown DEX")
+    liquidity = token.get("liquidity", 0)
+
+    narrative = ""
+
+    # Short-term explosion
+    if change_1h >= 150:
+        narrative = (
+            f"{sym} is on fire — up {change_1h}% in the last hour with over "
+            f"${volume/1_000_000:.1f}M in volume on {dex}. "
+            f"Liquidity pool is now holding ${liquidity:,.0f}, "
+            f"suggesting early accumulation from high-tier wallets."
+        )
+    # Medium momentum
+    elif change_24h >= 80:
+        narrative = (
+            f"{sym} has surged {change_24h}% over 24h on {dex}, "
+            f"driven by ${volume/1_000_000:.1f}M daily volume. "
+            f"Liquidity strength at ${liquidity:,.0f} indicates growing retail traction."
+        )
+    # Steady build-up
+    else:
+        narrative = (
+            f"{sym} showing early traction with {change_1h}% gains in the last hour "
+            f"and ${volume/1_000_000:.1f}M traded on {dex}. "
+            f"Liquidity base is ${liquidity:,.0f}, "
+            f"suggesting accumulation patterns forming."
+        )
+
+    return narrative
 def format_alert(token):
     """Craft a compelling, contextual alert message."""
     performance = ""
