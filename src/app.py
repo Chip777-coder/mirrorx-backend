@@ -45,11 +45,28 @@ def healthz():
 def rpc_list():
     return jsonify(RPC_URLS)
 
-# ---- Blueprints ----
+# ==================================================================
+# ✅ BLUEPRINT REGISTRATION
+# ------------------------------------------------------------------
+# Added dual-mounting for GPT compatibility: each blueprint is now
+# available under both /api/... and the root path GPT expects.
+# ==================================================================
+
+# Fusion: keep only /api (GPT doesn't call it directly)
 app.register_blueprint(fusion_bp, url_prefix="/api")
+
+# Crypto: fine as /crypto/solana
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
+
+# Intelligence: serve under both /intel/* and /api/intel/*
 app.register_blueprint(intel_bp, url_prefix="/intel")
+app.register_blueprint(intel_bp, url_prefix="/api/intel")
+
+# TwitterRapid: serve under both /twitterRapid/* and /api/twitterRapid/*
 app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
+app.register_blueprint(twitter_bp, url_prefix="/api/twitterRapid")
+
+# ==================================================================
 
 # ---- Status and HealthCard ----
 from src.routes.status import status_bp
