@@ -72,7 +72,27 @@ def get_signal_trends():
     # Sort by positive or negative trend
     emerging = sorted([t for t in trends if t["change"] > 0], key=lambda x: x["change"], reverse=True)[:5]
     fading = sorted([t for t in trends if t["change"] < 0], key=lambda x: x["change"])[:5]
+# Sort by positive or negative trend
+    emerging = sorted([t for t in trends if t["change"] > 0], key=lambda x: x["change"], reverse=True)[:5]
+    fading = sorted([t for t in trends if t["change"] < 0], key=lambda x: x["change"])[:5]
 
+    result = {
+        "system": "MirrorX Alpha Trend Engine",
+        "status": "operational",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "records_analyzed": len(history),
+        "emerging": emerging,
+        "fading": fading
+    }
+
+    # ✅ Step 5: Auto Telegram Trend Broadcast
+    try:
+        from src.alerts.telegram_bot import send_trend_alert
+        send_trend_alert(result)
+    except Exception as e:
+        print("Trend Telegram broadcast skipped or failed:", e)
+
+    return jsonify(result)
     return jsonify({
         "system": "MirrorX Alpha Trend Engine",
         "status": "operational",
