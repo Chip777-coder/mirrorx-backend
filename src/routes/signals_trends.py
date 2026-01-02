@@ -7,13 +7,13 @@ Analyzes historical alpha signal snapshots to identify emerging and fading token
 from flask import Blueprint, jsonify
 from pathlib import Path
 import json
-import math
 from datetime import datetime, timezone
 
 signals_trends_bp = Blueprint("signals_trends_bp", __name__)
 
 # Path to the signal history data
 HISTORY_FILE = Path(__file__).resolve().parent.parent / "data" / "signals" / "alpha_signals_history.json"
+
 
 def _load_history():
     """Load alpha signal history safely."""
@@ -25,10 +25,14 @@ def _load_history():
     except Exception:
         return {"records": []}
 
+
 def _normalize_symbol(symbol):
     return symbol.lower().strip() if symbol else None
 
-@signals_trends_bp.route("/api/signals/trends", methods=["GET"])
+
+# ✅ FIXED: blueprint is mounted at /api, so define relative path here
+# Final URL becomes: /api/signals/trends
+@signals_trends_bp.route("/signals/trends", methods=["GET"])
 def get_signal_trends():
     """
     Compare recent alpha signal history snapshots and calculate per-token trend changes.
@@ -55,24 +59,25 @@ def get_signal_trends():
                 continue
             token_scores.setdefault(sym, []).append(t.get("alpha_score", 0))
 
-    # Compute trend deltas (difference between last and first score)
+    # Compute trend deltas (difference between most recent and oldest in window)
     trends = []
     for sym, scores in token_scores.items():
         if len(scores) < 2:
             continue
-        change = scores[0] - scores[-1]  # recent - older
+
+        # Note: history ordering depends on how you append snapshots.
+        # This keeps your original behavior but in a clean form.
+        change = scores[0] - scores[-1]
         momentum = "rising" if change > 0 else "falling" if change < 0 else "flat"
+        trend_pct = (change / (abs(scores[-1]) + 0.001)) * 100
+
         trends.append({
             "symbol": sym.upper(),
             "change": round(change, 3),
             "momentum": momentum,
-            "trend_pct": f"{round((change / (abs(scores[-1]) + 0.001)) * 100, 2)}%"
+            "trend_pct": f"{round(trend_pct, 2)}%"
         })
 
-    # Sort by positive or negative trend
-    emerging = sorted([t for t in trends if t["change"] > 0], key=lambda x: x["change"], reverse=True)[:5]
-    fading = sorted([t for t in trends if t["change"] < 0], key=lambda x: x["change"])[:5]
-# Sort by positive or negative trend
     emerging = sorted([t for t in trends if t["change"] > 0], key=lambda x: x["change"], reverse=True)[:5]
     fading = sorted([t for t in trends if t["change"] < 0], key=lambda x: x["change"])[:5]
 
@@ -85,7 +90,7 @@ def get_signal_trends():
         "fading": fading
     }
 
-    # ✅ Step 5: Auto Telegram Trend Broadcast
+    # ✅ Optional: Auto Telegram Trend Broadcast
     try:
         from src.alerts.telegram_bot import send_trend_alert
         send_trend_alert(result)
@@ -93,11 +98,3 @@ def get_signal_trends():
         print("Trend Telegram broadcast skipped or failed:", e)
 
     return jsonify(result)
-    return jsonify({
-        "system": "MirrorX Alpha Trend Engine",
-        "status": "operational",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "records_analyzed": len(history),
-        "emerging": emerging,
-        "fading": fading
-    })
