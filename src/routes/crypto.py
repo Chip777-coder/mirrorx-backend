@@ -4,7 +4,7 @@ from src.services.solana import get_solana_trending
 
 crypto_bp = Blueprint("crypto", __name__)
 
-@crypto_bp.route("/api/crypto/solana", methods=["GET"])
+@crypto_bp.route("/solana", methods=["GET"])
 def solana_tokens():
     """
     Live Solana token metrics and trending pairs.
