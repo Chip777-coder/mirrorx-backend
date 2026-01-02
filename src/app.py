@@ -50,13 +50,28 @@ app.register_blueprint(fusion_bp, url_prefix="/api")
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
 app.register_blueprint(intel_bp, url_prefix="/intel")
 app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
+
+# ---- Status and HealthCard ----
 from src.routes.status import status_bp
 app.register_blueprint(status_bp, url_prefix="/api")
-# ---- HealthCard Blueprint ----
+
 from src.routes.health_card import health_bp
 app.register_blueprint(health_bp)
+
+# ---- Signals and History ----
 from src.routes.signals import signals_bp
 app.register_blueprint(signals_bp, url_prefix="/api")
+
+from src.routes.signal_history import signal_history_bp
+app.register_blueprint(signal_history_bp, url_prefix="/api")
+
+from src.routes.signals_history import signals_history_bp
+app.register_blueprint(signals_history_bp)
+
+# ✅ NEW: Alpha Trend Engine
+from src.routes.signals_trends import signals_trends_bp
+app.register_blueprint(signals_trends_bp, url_prefix="/api")
+
 # ---- Conditional Blueprints ----
 try:
     from src.routes.rpc_status import rpc_status_bp
@@ -84,10 +99,7 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
         app.register_blueprint(smoke_bp, url_prefix="")
     except Exception as e:
         print(f"[WARN] Smoke failed to import: {e}")
-from src.routes.signal_history import signal_history_bp
-app.register_blueprint(signal_history_bp, url_prefix="/api")
-from src.routes.signals_history import signals_history_bp
-app.register_blueprint(signals_history_bp)
+
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
@@ -109,8 +121,6 @@ def test_env():
         "quicknode_http": bool(settings.QUICKNODE_HTTP),
         "quicknode_wss": bool(settings.QUICKNODE_WSS),
     }
-    from src.routes.signals_trends import signals_trends_bp
-app.register_blueprint(signals_trends_bp)
 
 # ---- Serve OpenAPI Spec ----
 @app.route("/openapi.json", methods=["GET"])
@@ -122,7 +132,10 @@ def serve_openapi():
 @app.route("/fusion-dashboard", methods=["GET"])
 def serve_fusion_dashboard():
     """Serve the real-time Fusion Intelligence dashboard"""
-    return send_from_directory(os.path.join(os.path.dirname(__file__), "analytics/ui"), "fusion_dashboard.html")
+    return send_from_directory(
+        os.path.join(os.path.dirname(__file__), "analytics/ui"),
+        "fusion_dashboard.html"
+    )
 
 # ---- Run Server ----
 if __name__ == "__main__":
