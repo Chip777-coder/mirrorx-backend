@@ -137,6 +137,31 @@ def serve_fusion_dashboard():
         "fusion_dashboard.html"
     )
 
+# ---- Automated Trend Scheduler ----
+from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime
+import threading
+import requests
+
+def trigger_trends_job():
+    """Fetch /api/signals/trends every 3 hours to auto-generate alerts."""
+    try:
+        print(f"[SCHEDULER] Triggering trend job at {datetime.utcnow().isoformat()}Z")
+        res = requests.get("https://mirrorx-backend.onrender.com/api/signals/trends", timeout=20)
+        print(f"[SCHEDULER] Trend job response: {res.status_code}")
+    except Exception as e:
+        print(f"[SCHEDULER] Trend job failed: {e}")
+
+def start_scheduler():
+    """Start the background scheduler in a separate thread."""
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(trigger_trends_job, "interval", hours=3, next_run_time=datetime.utcnow())
+    scheduler.start()
+    print("✅ MirrorX Trend Scheduler initialized (runs every 3 hours).")
+
+# Run the scheduler after app creation
+threading.Thread(target=start_scheduler).start()
+
 # ---- Run Server ----
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=settings.PORT)
