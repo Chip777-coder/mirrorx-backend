@@ -63,11 +63,9 @@ app.register_blueprint(intel_bp, url_prefix="/api/intel", name="intel_api")
 
 # TwitterRapid: serve under both /twitterRapid/* and /api/twitterRapid/*
 app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
+# TwitterRapid: serve under both /twitterRapid/* and /api/twitterRapid/*
+app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
 app.register_blueprint(twitter_bp, url_prefix="/api/twitterRapid", name="twitterRapid_api")
-app.register_blueprint(twitter_bp, url_prefix="/api/twitterRapid")
-
-# ==================================================================
-
 # ---- Status and HealthCard ----
 from src.routes.status import status_bp
 app.register_blueprint(status_bp, url_prefix="/api")
