@@ -71,6 +71,7 @@ def detect_alpha_tokens(symbols=None):
         pairs = fetch_token_data(sym)
         detected += analyze_pairs(pairs)
     return sorted(detected, key=lambda x: x["change_1h"] + x["change_24h"], reverse=True)
+
 def generate_alpha_summary(token):
     """
     Creates a dynamic, human-readable narrative for Telegram alerts.
@@ -111,8 +112,9 @@ def generate_alpha_summary(token):
         )
 
     return narrative
+
 def format_alert(token):
-    """Craft a compelling, contextual alert message."""
+    """Craft a compelling, contextual alert message with narrative."""
     performance = ""
     if token["change_1h"] >= 100:
         performance = f"🚀 {token['symbol']} holders are already up {int(token['change_1h'])}x in the last hour!"
@@ -122,6 +124,9 @@ def format_alert(token):
         performance = f"⚡ {token['symbol']} showing parabolic 24h growth: +{token['change_24h']}%"
     else:
         performance = f"⏳ Building momentum: {token['change_1h']}% (1h)"
+
+    # ✅ Add narrative context
+    narrative = generate_alpha_summary(token)
 
     message = (
         f"<b>📊 MirrorX Alpha Alert</b>\n"
@@ -133,6 +138,7 @@ def format_alert(token):
         f"Liquidity: ${token['liquidity']:,.0f}\n"
         f"DEX: {token['dex']}\n\n"
         f"{performance}\n"
+        f"{narrative}\n\n"
         f"<a href='{token['url']}'>View on DexScreener</a>\n\n"
         f"💡 MirrorX surfaces early market anomalies before retail momentum. "
         f"Signals like these have historically preceded 100x+ runs."
