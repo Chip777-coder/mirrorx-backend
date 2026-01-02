@@ -181,3 +181,29 @@
                   "records": [
                     {
                       "timestamp
+"/signals/trends": {
+  "get": {
+    "summary": "Analyze MirrorX alpha signal trends",
+    "operationId": "get_signal_trends",
+    "description": "Identifies emerging and fading tokens by comparing historical alpha signal snapshots.",
+    "responses": {
+      "200": {
+        "description": "List of emerging and fading tokens",
+        "content": {
+          "application/json": {
+            "example": {
+              "system": "MirrorX Alpha Trend Engine",
+              "status": "operational",
+              "emerging": [
+                { "symbol": "BONK", "trend_pct": "+18.2%", "momentum": "rising" }
+              ],
+              "fading": [
+                { "symbol": "SOL", "trend_pct": "-7.1%", "momentum": "falling" }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
