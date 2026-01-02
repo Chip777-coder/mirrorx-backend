@@ -99,12 +99,10 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
         app.register_blueprint(smoke_bp, url_prefix="")
     except Exception as e:
         print(f"[WARN] Smoke failed to import: {e}")
+
 from src.routes.alerts_test import alerts_test_bp
 app.register_blueprint(alerts_test_bp)
-from src.services.alpha_detector import push_alpha_alerts
 
-print("[SCHEDULER] Running Alpha Detector...")
-push_alpha_alerts()
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
@@ -148,21 +146,37 @@ from datetime import datetime
 import threading
 import requests
 
+# ✅ Import Alpha Detectors
+from src.services.alpha_detector import push_alpha_alerts
+from src.services.alpha_fusion import push_fused_alpha_alerts
+
 def trigger_trends_job():
-    """Fetch /api/signals/trends every 3 hours to auto-generate alerts."""
+    """Unified job runner for all intelligence engines."""
     try:
-        print(f"[SCHEDULER] Triggering trend job at {datetime.utcnow().isoformat()}Z")
+        print(f"[SCHEDULER] Triggering unified job at {datetime.utcnow().isoformat()}Z")
+
+        # 1️⃣ Run Dex-only Alpha Detector
+        print("[SCHEDULER] → Running Alpha Detector (DEX layer)…")
+        push_alpha_alerts()
+
+        # 2️⃣ Run Dex + Fusion Alpha Detector
+        print("[SCHEDULER] → Running Alpha Fusion (DEX + Fusion layer)…")
+        push_fused_alpha_alerts()
+
+        # 3️⃣ Trigger legacy trend job (optional)
         res = requests.get("https://mirrorx-backend.onrender.com/api/signals/trends", timeout=20)
         print(f"[SCHEDULER] Trend job response: {res.status_code}")
+
+        print("✅ MirrorX unified job cycle complete.\n")
     except Exception as e:
-        print(f"[SCHEDULER] Trend job failed: {e}")
+        print(f"[SCHEDULER] Unified job failed: {e}")
 
 def start_scheduler():
     """Start the background scheduler in a separate thread."""
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(trigger_trends_job, "interval", hours=3, next_run_time=datetime.utcnow())
     scheduler.start()
-    print("✅ MirrorX Trend Scheduler initialized (runs every 3 hours).")
+    print("✅ MirrorX Unified Scheduler initialized (runs every 3 hours).")
 
 # Run the scheduler after app creation
 threading.Thread(target=start_scheduler).start()
