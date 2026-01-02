@@ -10,9 +10,9 @@ from src.services.solana import get_solana_trending
 intel_bp = Blueprint("intel", __name__)
 
 # --------------------------------------------------------------------
-#  /api/intel/summary
+#  /intel/summary and /api/intel/summary
 # --------------------------------------------------------------------
-@intel_bp.route("/api/intel/summary", methods=["GET"])
+@intel_bp.route("/summary", methods=["GET"])
 def intel_summary():
     """
     Lightweight snapshot combining core sources:
@@ -47,9 +47,9 @@ def intel_summary():
 
 
 # --------------------------------------------------------------------
-#  /api/intel/full
+#  /intel/full and /api/intel/full
 # --------------------------------------------------------------------
-@intel_bp.route("/api/intel/full", methods=["GET"])
+@intel_bp.route("/full", methods=["GET"])
 def intel_full():
     """
     Deep dataset merging all social + market intelligence streams
