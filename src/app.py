@@ -14,6 +14,7 @@ from src.routes.fusion import fusion_bp  # ✅ Fusion blueprint
 # ---- Load RPCs ----
 RPC_FILE = os.path.join(os.path.dirname(__file__), "rpcs", "rpc_list.json")
 
+
 def load_rpc_urls():
     try:
         with open(RPC_FILE, "r") as f:
@@ -26,6 +27,7 @@ def load_rpc_urls():
         print(f"Error loading RPC list: {e}")
     return []
 
+
 RPC_URLS = load_rpc_urls()
 
 # ---- Initialize Flask ----
@@ -37,13 +39,16 @@ CORS(app)
 def home():
     return "🚀 MirroraX backend is live!"
 
+
 @app.route("/healthz")
 def healthz():
     return jsonify({"ok": True})
 
+
 @app.route("/rpc-list")
 def rpc_list():
     return jsonify(RPC_URLS)
+
 
 # ==================================================================
 # ✅ BLUEPRINT REGISTRATION
@@ -150,6 +155,8 @@ def serve_openapi():
     if os.path.exists(file_path):
         return send_from_directory(base_dir, "openapi.json")
     return jsonify({"error": "openapi.json not found"}), 404
+
+
 # ---- Fusion Dashboard UI ----
 @app.route("/fusion-dashboard", methods=["GET"])
 def serve_fusion_dashboard():
@@ -158,6 +165,7 @@ def serve_fusion_dashboard():
         os.path.join(os.path.dirname(__file__), "analytics/ui"),
         "fusion_dashboard.html"
     )
+
 
 # ---- Automated Trend Scheduler ----
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -168,6 +176,7 @@ import requests
 # ✅ Import Alpha Detectors
 from src.services.alpha_detector import push_alpha_alerts
 from src.services.alpha_fusion import push_fused_alpha_alerts
+
 
 def trigger_trends_job():
     """Unified job runner for all intelligence engines."""
@@ -190,6 +199,7 @@ def trigger_trends_job():
     except Exception as e:
         print(f"[SCHEDULER] Unified job failed: {e}")
 
+
 def start_scheduler():
     """Start the background scheduler in a separate thread."""
     scheduler = BackgroundScheduler(daemon=True)
@@ -197,8 +207,10 @@ def start_scheduler():
     scheduler.start()
     print("✅ MirrorX Unified Scheduler initialized (runs every 3 hours).")
 
+
 # Run the scheduler after app creation
 threading.Thread(target=start_scheduler).start()
-@app.route("/openapi.json", methods=["GET"])
-def serve_openapi():
-    
+
+# ---- Run Server ----
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=settings.PORT)
