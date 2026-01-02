@@ -21,14 +21,13 @@ paths:
               schema:
                 type: object
                 properties:
-                  ok:
-                    type: boolean
+                  ok: { type: boolean }
                 required: [ok]
                 additionalProperties: true
               example:
                 ok: true
 
-  /status:
+  /api/status:
     get:
       operationId: getStatus
       summary: Get unified MirrorX system status
@@ -40,23 +39,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemStatus"
-              example:
-                system: MirrorX Intelligence API
-                overall_status: operational
-                healthy_services:
-                  - fusion_market
-                  - intel_summary
-                  - twitter_likes
-                degraded_services: []
-                uptime_signal: 1.0
+
+  /api/crypto/solana:
+    get:
+      operationId: getCryptoSolana
+      summary: Fetch Solana ecosystem market data
+      description: Live Solana token metrics and trending pairs.
+      responses:
+        "200":
+          description: Solana token list and metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CryptoSolanaResponse"
 
   /api/fusion/market-intel:
     get:
       operationId: getFusionMarketIntel
-      summary: Fetch Fusion market intel (market + solana ecosystem + socials)
-      description: >
-        Unified Fusion endpoint observed as live (HTTP 200 in server logs).
-        Use this in place of /crypto/solana which currently returns 404.
+      summary: Fetch Fusion market intel
+      description: Unified Fusion endpoint returning market + ecosystem + social data.
       responses:
         "200":
           description: Fusion market intel payload
@@ -65,67 +66,63 @@ paths:
               schema:
                 $ref: "#/components/schemas/FusionMarketIntelResponse"
 
-  /intel/summary:
+  /api/intel/summary:
     get:
       operationId: getIntelSummary
       summary: Fetch summarized intelligence data
+      description: Lightweight snapshot combining CoinMarketCap + CryptoCompare + Solana trending + Twitter activity.
       responses:
         "200":
-          description: Summarized crypto and social intelligence
+          description: Summarized market and social intelligence
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/IntelSummaryResponse"
 
-  /intel/full:
+  /api/intel/full:
     get:
       operationId: getIntelFull
       summary: Fetch full intelligence dataset
+      description: Deep dataset merging all social + market intelligence streams.
       responses:
         "200":
-          description: Comprehensive intelligence data
+          description: Full market and social intelligence payload
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/IntelFullResponse"
 
-  /twitterRapid/likes:
+  /api/twitterRapid/likes:
     get:
       operationId: getTwitterRapidLikes
       summary: Fetch Twitter likes using RapidAPI
       parameters:
         - name: pid
           in: query
-          required: true
-          description: Twitter post ID
+          required: false
+          description: Twitter post ID (defaults to mirrorx_trending)
           schema:
             type: string
         - name: count
           in: query
           required: false
-          description: Number of likes to retrieve
+          description: Number of likes to retrieve (defaults to 10)
           schema:
             type: integer
             minimum: 1
       responses:
         "200":
-          description: List of recent likes
+          description: Likes payload from RapidAPI or mirror source
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TwitterLikesResponse"
-              example:
-                postId: mirrorx_demo_post
-                likesCount: 5
-                users:
-                  - username: solana_alpha
-                  - username: bonk_whale
 
   /api/signals/alpha:
     get:
       operationId: getAlphaSignals
       summary: Get ranked MirrorX alpha signals
-      description: Aggregates liquidity, momentum, sentiment, and social metrics into top 10 ranked alpha opportunities.
+      description: Aggregates liquidity, momentum, sentiment, and social metrics into top ranked alpha opportunities.
       responses:
         "200":
           description: Ranked alpha signal list
@@ -147,7 +144,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AlphaSignalHistory"
 
-  /signals/trends:
+  /api/signals/trends:
     get:
       operationId: getSignalTrends
       summary: Analyze MirrorX alpha signal trends
@@ -162,39 +159,53 @@ paths:
 
 components:
   schemas:
-    # ---- Core system schemas ----
     SystemStatus:
       type: object
       properties:
-        system:
-          type: string
-        overall_status:
-          type: string
+        system: { type: string }
+        overall_status: { type: string }
         healthy_services:
           type: array
           items: { type: string }
         degraded_services:
           type: array
           items: { type: string }
-        uptime_signal:
-          type: number
+        endpoint_results:
+          type: object
+          properties: {}
+          additionalProperties: true
+        uptime_signal: { type: number }
       additionalProperties: true
 
-    # ---- Fusion ----
+    CryptoSolanaToken:
+      type: object
+      properties:
+        symbol: { type: string }
+        name: { type: string }
+      additionalProperties: true
+
+    CryptoSolanaResponse:
+      type: object
+      properties:
+        updated: { type: string }
+        ecosystem: { type: string }
+        count: { type: integer }
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/CryptoSolanaToken"
+      additionalProperties: true
+
     FusionMarketIntelResponse:
       type: object
-      description: Unified market intel payload (shape may evolve).
       properties:
-        system:
-          type: string
-        status:
-          type: string
+        system: { type: string }
+        status: { type: string }
         updated_at:
           type: string
           format: date-time
         data:
           type: object
-          description: Provider payload container.
           properties:
             solana:
               type: object
@@ -202,15 +213,7 @@ components:
                 tokens:
                   type: array
                   items:
-                    type: object
-                    properties:
-                      symbol: { type: string }
-                      name: { type: string }
-                      price_usd: { type: number }
-                      market_cap_usd: { type: number }
-                      volume_24h_usd: { type: number }
-                      price_change_24h_pct: { type: number }
-                    additionalProperties: true
+                    $ref: "#/components/schemas/CryptoSolanaToken"
               additionalProperties: true
             market:
               type: object
@@ -225,135 +228,107 @@ components:
           additionalProperties: true
       additionalProperties: true
 
-    # ---- Intel ----
+    IntelSummaryMarketItem:
+      type: object
+      properties:
+        symbol: { type: string }
+        name: { type: string }
+        price: { type: number }
+        volume24h: { type: number }
+        change24h: { type: number }
+      additionalProperties: true
+
     IntelSummaryResponse:
       type: object
       properties:
-        system:
-          type: string
-        status:
-          type: string
-        highlights:
+        updated: { type: string }
+        marketSnapshot:
           type: array
-          items: { type: string }
-        market:
-          type: object
-          properties:
-            narrative: { type: string }
-            risk_level: { type: string }
-            notable_tokens:
-              type: array
-              items: { type: string }
-          additionalProperties: true
+          items:
+            $ref: "#/components/schemas/IntelSummaryMarketItem"
+        solanaTrending:
+          type: array
+          items:
+            type: object
+            properties: {}
+            additionalProperties: true
         social:
           type: object
           properties:
-            narrative: { type: string }
-            trending_topics:
+            topTwitterMentions:
               type: array
-              items: { type: string }
+              items:
+                type: object
+                properties: {}
+                additionalProperties: true
           additionalProperties: true
-        updated_at:
-          type: string
-          format: date-time
       additionalProperties: true
 
     IntelFullResponse:
       type: object
       properties:
-        system:
-          type: string
-        status:
-          type: string
+        updated: { type: string }
         market:
           type: object
           properties:
-            tokens:
+            solana:
               type: array
               items:
                 type: object
-                properties:
-                  symbol: { type: string }
-                  metrics:
-                    type: object
-                    properties:
-                      price_usd: { type: number }
-                      liquidity_usd: { type: number }
-                      volume_24h_usd: { type: number }
-                      price_change_24h_pct: { type: number }
-                    additionalProperties: true
+                properties: {}
                 additionalProperties: true
-            sectors:
+            coinmarketcap:
               type: array
               items:
                 type: object
-                properties:
-                  name: { type: string }
-                  summary: { type: string }
+                properties: {}
                 additionalProperties: true
+            compare:
+              type: object
+              properties: {}
+              additionalProperties: true
           additionalProperties: true
         social:
           type: object
           properties:
-            influencers:
+            twitter:
               type: array
               items:
                 type: object
-                properties:
-                  username: { type: string }
-                  score: { type: number }
+                properties: {}
                 additionalProperties: true
-            posts:
+            discord:
               type: array
               items:
                 type: object
-                properties:
-                  id: { type: string }
-                  text: { type: string }
-                  created_at:
-                    type: string
-                    format: date-time
+                properties: {}
+                additionalProperties: true
+            telegram:
+              type: array
+              items:
+                type: object
+                properties: {}
                 additionalProperties: true
           additionalProperties: true
-        raw:
-          type: object
-          description: Optional raw provider payload passthrough.
-          properties:
-            payload:
-              type: object
-              properties:
-                _:
-                  type: string
-                  description: Placeholder to satisfy schema validators; payload is free-form.
-              additionalProperties: true
-          additionalProperties: true
-        updated_at:
-          type: string
-          format: date-time
       additionalProperties: true
 
-    # ---- Twitter likes ----
     TwitterLikesUser:
       type: object
       properties:
-        username:
-          type: string
+        username: { type: string }
       additionalProperties: true
 
     TwitterLikesResponse:
       type: object
       properties:
-        postId:
-          type: string
-        likesCount:
-          type: integer
+        postId: { type: string }
+        likesCount: { type: integer }
         users:
           type: array
           items:
             $ref: "#/components/schemas/TwitterLikesUser"
       additionalProperties: true
 
-    # ---- Alpha signals ----
     AlphaSignal:
       type: object
       properties:
@@ -384,13 +359,14 @@ components:
         timestamp:
           type: string
           format: date-time
-        system: { type: string }
-        status: { type: string }
-        total_tokens_scanned: { type: integer }
-        top_signals:
-          type: array
-          items:
-            $ref: "#/components/schemas/AlphaSignal"
+        data:
+          type: object
+          properties:
+            top_signals:
+              type: array
+              items:
+                $ref: "#/components/schemas/AlphaSignal"
+          additionalProperties: true
       additionalProperties: true
 
     AlphaSignalHistory:
@@ -406,8 +382,9 @@ components:
       type: object
       properties:
         symbol: { type: string }
-        trend_pct: { type: string }
+        change: { type: number }
         momentum: { type: string }
+        trend_pct: { type: string }
       additionalProperties: true
 
     AlphaTrendResponse:
@@ -415,6 +392,10 @@ components:
       properties:
         system: { type: string }
         status: { type: string }
+        timestamp:
+          type: string
+          format: date-time
+        records_analyzed: { type: integer }
         emerging:
           type: array
           items:
