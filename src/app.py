@@ -144,8 +144,11 @@ def test_env():
 @app.route("/openapi.json", methods=["GET"])
 def serve_openapi():
     """Serve OpenAPI schema for GPT Actions"""
-    return send_from_directory(os.getcwd(), "openapi.json")
-
+    base_dir = os.path.dirname(os.path.dirname(__file__))  # one level up from /src
+    file_path = os.path.join(base_dir, "openapi.json")
+    if os.path.exists(file_path):
+        return send_from_directory(base_dir, "openapi.json")
+    return jsonify({"error": "openapi.json not found"}), 404
 # ---- Fusion Dashboard UI ----
 @app.route("/fusion-dashboard", methods=["GET"])
 def serve_fusion_dashboard():
