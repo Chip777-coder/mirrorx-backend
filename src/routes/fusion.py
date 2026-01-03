@@ -1,10 +1,19 @@
 # src/routes/fusion.py
+import os
+import time
 from flask import Blueprint, jsonify, request
 from src.services.coinmarketcap import get_cmc_listings
 from src.services.cryptocompare import get_crypto_compare
 from src.services.dexscreener import fetch_pair_search, fetch_token_profiles, CANONICAL_SOL_MINTS
 
 fusion_bp = Blueprint("fusion", __name__)
+
+# -------------------------------------------------------------------
+# Simple in-memory cache (per worker)
+# Set env var FUSION_TTL_SECONDS=60 (or 30) to control caching.
+# -------------------------------------------------------------------
+_FUSION_CACHE = {"ts": 0.0, "payload": None}
+_FUSION_TTL = int(os.getenv("FUSION_TTL_SECONDS", "60"))
 
 
 def _as_float(x, default=0.0):
@@ -34,17 +43,26 @@ def fusion_market_intel():
     Fixes:
       - Avoid symbol-only spoof matches by using canonical mint for known symbols (WEN etc.)
       - Choose best Dex pair by liquidity (not matched[0])
+
+    Performance:
+      - Adds a short TTL cache to reduce upstream API calls.
     """
-    cmc_data = get_cmc_listings() or []
-    cc_data = get_crypto_compare() or {}
 
     # Optional query param for searching specific pairs/tokens
     search_query = request.args.get("search", "").strip()
 
-    # If user searches, use Dex search (already filtered/best-only in your updated dexscreener.py)
+    # If user searches, skip cache (search should be fresh / specific)
     if search_query:
         dex_data = fetch_pair_search(search_query)  # returns [best] or []
         return jsonify({"updated": "now", "data": dex_data})
+
+    # Serve cached payload if fresh
+    now = time.time()
+    if _FUSION_CACHE["payload"] is not None and (now - _FUSION_CACHE["ts"]) < _FUSION_TTL:
+        return jsonify(_FUSION_CACHE["payload"])
+
+    cmc_data = get_cmc_listings() or []
+    cc_data = get_crypto_compare() or {}
 
     # Otherwise use token profiles (broad list) but DO NOT trust symbol-only for canonical tokens.
     dex_profiles = fetch_token_profiles() or []
@@ -63,7 +81,6 @@ def fusion_market_intel():
             dex = best[0] if best else {}
         else:
             # Best-effort match from profiles if they happen to include pair-like objects.
-            # If profiles aren't pair-shaped, this will safely do nothing.
             matched = []
             for d in dex_profiles:
                 base = d.get("baseToken", {})
@@ -104,4 +121,10 @@ def fusion_market_intel():
             "dexBaseMint": dex_base_mint,
         })
 
-    return jsonify({"updated": "now", "data": unified})
+    payload = {"updated": "now", "data": unified}
+
+    # Store in cache
+    _FUSION_CACHE["ts"] = time.time()
+    _FUSION_CACHE["payload"] = payload
+
+    return jsonify(payload)
