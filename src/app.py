@@ -123,7 +123,8 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
 
 from src.routes.alerts_test import alerts_test_bp
 app.register_blueprint(alerts_test_bp)
-
+from src.routes.dex_proxy import dex_proxy_bp
+app.register_blueprint(dex_proxy_bp, url_prefix="/api")
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
