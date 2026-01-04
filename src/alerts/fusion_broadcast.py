@@ -15,6 +15,10 @@ ENABLE_BROADCAST = os.getenv("ENABLE_BROADCAST", "0") == "1"
 _MIN_SECONDS_BETWEEN_SENDS = int(os.getenv("BROADCAST_MIN_SECONDS", "180"))  # 3 minutes default
 _last_sent_ts = 0.0
 
+# Prevent log spam when broadcast disabled
+_last_disabled_log_ts = 0.0
+_DISABLED_LOG_EVERY_SECONDS = int(os.getenv("BROADCAST_DISABLED_LOG_EVERY", "600"))  # 10 minutes default
+
 
 def _get_bot():
     """Create bot lazily (avoid import-time side effects in Gunicorn)."""
@@ -28,20 +32,25 @@ def _get_bot():
 
 def broadcast_fusion(payload):
     """Send top fusion updates to Telegram & Discord."""
-    global _last_sent_ts
+    global _last_sent_ts, _last_disabled_log_ts
 
     if not payload:
         return
 
+    now = time.time()
+
     # Hard gate: do nothing unless explicitly enabled
     if not ENABLE_BROADCAST:
-        print("[BROADCAST] Skipped (ENABLE_BROADCAST=0)")
+        # Log at most once every N seconds to avoid spam
+        if (now - _last_disabled_log_ts) >= _DISABLED_LOG_EVERY_SECONDS:
+            print("[BROADCAST] Skipped (ENABLE_BROADCAST=0)")
+            _last_disabled_log_ts = now
         return
 
     # Rate limit (best effort)
-    now = time.time()
     if _MIN_SECONDS_BETWEEN_SENDS > 0 and (now - _last_sent_ts) < _MIN_SECONDS_BETWEEN_SENDS:
-        print("[BROADCAST] Skipped (rate-limited)")
+        # You can comment this out if you want totally quiet logs:
+        # print("[BROADCAST] Skipped (rate-limited)")
         return
 
     try:
