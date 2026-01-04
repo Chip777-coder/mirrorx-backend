@@ -158,8 +158,9 @@ def push_alpha_alerts():
     top_tokens = detected[:5]
     for token in top_tokens:
         msg = format_alert(token)
-        send_telegram_message(msg)
-        print(f"[AlphaDetector] Sent alert for {token['symbol']}")
+add_alert("alpha_detector", {"symbol": token.get("symbol"), "url": token.get("url"), "message": msg})
+send_telegram_message(msg)
+print(f"[AlphaDetector] Sent alert for {token['symbol']}")
 
 if __name__ == "__main__":
     # Local debug test
