@@ -127,6 +127,8 @@ from src.routes.dex_proxy import dex_proxy_bp
 app.register_blueprint(dex_proxy_bp, url_prefix="/api")
 from src.routes.alerts_api import alerts_api_bp
 app.register_blueprint(alerts_api_bp, url_prefix="/api")
+from src.routes.alerts_api import alerts_api_bp
+app.register_blueprint(alerts_api_bp, url_prefix="/api")
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
