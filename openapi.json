@@ -1,12 +1,17 @@
 openapi: 3.1.0
 info:
-  title: MirroraX Intelligence API
+  title: MirroraX Intelligence + DexScreener Actions API
   version: 1.0.0
   description: >
-    Provides live market, social, and intelligence data for the MirroraX GPT —
-    including Fusion, Alpha Signals, and system health endpoints.
+    MirrorX backend endpoints (Fusion/Intel/Signals/Health) plus optional direct DexScreener endpoints.
+    Also includes an optional Telegram "send alert" endpoint you can add to your Flask app to let the GPT
+    trigger Telegram pushes explicitly (recommended for clean integration).
+
 servers:
   - url: https://mirrorx-backend.onrender.com
+    description: MirrorX Backend (Render)
+  - url: https://api.dexscreener.com
+    description: DexScreener Public API
 
 paths:
   /healthz:
@@ -21,17 +26,16 @@ paths:
               schema:
                 type: object
                 properties:
-                  ok: { type: boolean }
+                  ok:
+                    type: boolean
                 required: [ok]
                 additionalProperties: true
-              example:
-                ok: true
 
   /api/status:
     get:
       operationId: getStatus
       summary: Get unified MirrorX system status
-      description: Returns overall MirrorX system health, endpoint availability, and uptime signal.
+      description: Status aggregation of key MirrorX endpoints.
       responses:
         "200":
           description: System health snapshot
@@ -40,24 +44,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/SystemStatus"
 
-  /api/crypto/solana:
-    get:
-      operationId: getCryptoSolana
-      summary: Fetch Solana ecosystem market data
-      description: Live Solana token metrics and trending pairs.
-      responses:
-        "200":
-          description: Solana token list and metrics
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CryptoSolanaResponse"
-
   /api/fusion/market-intel:
     get:
       operationId: getFusionMarketIntel
       summary: Fetch Fusion market intel
       description: Unified Fusion endpoint returning market + ecosystem + social data.
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Optional token/pair search query (forwarded to DexScreener search logic in your backend).
+          schema:
+            type: string
       responses:
         "200":
           description: Fusion market intel payload
@@ -66,11 +64,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/FusionMarketIntelResponse"
 
+  /api/crypto/solana:
+    get:
+      operationId: getCryptoSolana
+      summary: Fetch Solana ecosystem market data
+      description: Live Solana token metrics and trending pairs (your backend route).
+      responses:
+        "200":
+          description: Solana token list and metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CryptoSolanaResponse"
+
   /api/intel/summary:
     get:
       operationId: getIntelSummary
       summary: Fetch summarized intelligence data
-      description: Lightweight snapshot combining CoinMarketCap + CryptoCompare + Solana trending + Twitter activity.
+      description: Lightweight snapshot combining market + social sources.
       responses:
         "200":
           description: Summarized market and social intelligence
@@ -100,7 +111,7 @@ paths:
         - name: pid
           in: query
           required: false
-          description: Twitter post ID (defaults to mirrorx_trending)
+          description: Twitter post ID (defaults to mirrorx_trending in your code)
           schema:
             type: string
         - name: count
@@ -112,7 +123,7 @@ paths:
             minimum: 1
       responses:
         "200":
-          description: Likes payload from RapidAPI or mirror source
+          description: Likes payload
           content:
             application/json:
               schema:
@@ -122,7 +133,6 @@ paths:
     get:
       operationId: getAlphaSignals
       summary: Get ranked MirrorX alpha signals
-      description: Aggregates liquidity, momentum, sentiment, and social metrics into top ranked alpha opportunities.
       responses:
         "200":
           description: Ranked alpha signal list
@@ -135,10 +145,9 @@ paths:
     get:
       operationId: getSignalHistory
       summary: Get alpha signal history
-      description: Returns stored historical snapshots of previous alpha signal calculations for trend and performance analysis.
       responses:
         "200":
-          description: Array of historical signal snapshots
+          description: Historical alpha signal snapshots
           content:
             application/json:
               schema:
@@ -148,14 +157,230 @@ paths:
     get:
       operationId: getSignalTrends
       summary: Analyze MirrorX alpha signal trends
-      description: Identifies emerging and fading tokens by comparing historical alpha signal snapshots.
       responses:
         "200":
-          description: List of emerging and fading tokens
+          description: Emerging and fading tokens
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AlphaTrendResponse"
+
+  # ---------------------------
+  # Optional: Telegram send endpoint (add this to Flask if you want GPT-triggered alerts)
+  # ---------------------------
+  /api/alerts/telegram/send:
+    post:
+      operationId: sendTelegramAlert
+      summary: Send a Telegram alert message (MirrorX backend)
+      description: >
+        Optional endpoint. Implement it in Flask to allow explicit Telegram pushes from the GPT.
+        This is cleaner than relying only on background threads.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramSendRequest"
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelegramSendResponse"
+
+  # ---------------------------
+  # DexScreener (direct) endpoints — from your reference list
+  # Note: these use the DexScreener server above.
+  # ---------------------------
+  /token-profiles/latest/v1:
+    get:
+      operationId: getDexTokenProfiles
+      summary: DexScreener token profiles (latest)
+      responses:
+        "200":
+          description: Array of token profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /community-takeovers/latest/v1:
+    get:
+      operationId: getDexCommunityTakeovers
+      summary: DexScreener community takeovers (latest)
+      responses:
+        "200":
+          description: Array of community takeovers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /ads/latest/v1:
+    get:
+      operationId: getDexAds
+      summary: DexScreener ads (latest)
+      responses:
+        "200":
+          description: Array of ads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /token-boosts/latest/v1:
+    get:
+      operationId: getDexTokenBoostsLatest
+      summary: DexScreener token boosts (latest)
+      responses:
+        "200":
+          description: Array of boosts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /token-boosts/top/v1:
+    get:
+      operationId: getDexTokenBoostsTop
+      summary: DexScreener token boosts (top)
+      responses:
+        "200":
+          description: Array of top boosts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /orders/v1/{chainId}/{tokenAddress}:
+    get:
+      operationId: getDexOrders
+      summary: DexScreener orders
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: tokenAddress
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Orders response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /latest/dex/pairs/{chainId}/{pairId}:
+    get:
+      operationId: getDexPair
+      summary: DexScreener pair by chain and pairId
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: pairId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Pair response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /latest/dex/search:
+    get:
+      operationId: searchDex
+      summary: DexScreener search
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+          description: Search query (symbol/pair)
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pairs:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                additionalProperties: true
+
+  /token-pairs/v1/{chainId}/{tokenAddress}:
+    get:
+      operationId: getDexTokenPairs
+      summary: DexScreener token pairs by chain and token address
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: tokenAddress
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Token pairs response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /tokens/v1/{chainId}/{tokenAddresses}:
+    get:
+      operationId: getDexTokens
+      summary: DexScreener tokens by chain and tokenAddresses (comma-separated)
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: tokenAddresses
+          in: path
+          required: true
+          schema: { type: string }
+          description: Comma-separated token addresses
+      responses:
+        "200":
+          description: Tokens response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 
 components:
   schemas:
@@ -172,7 +397,6 @@ components:
           items: { type: string }
         endpoint_results:
           type: object
-          properties: {}
           additionalProperties: true
         uptime_signal: { type: number }
       additionalProperties: true
@@ -199,43 +423,12 @@ components:
     FusionMarketIntelResponse:
       type: object
       properties:
-        system: { type: string }
-        status: { type: string }
-        updated_at:
-          type: string
-          format: date-time
+        updated: { type: string }
         data:
-          type: object
-          properties:
-            solana:
-              type: object
-              properties:
-                tokens:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/CryptoSolanaToken"
-              additionalProperties: true
-            market:
-              type: object
-              properties:
-                narrative: { type: string }
-              additionalProperties: true
-            social:
-              type: object
-              properties:
-                narrative: { type: string }
-              additionalProperties: true
-          additionalProperties: true
-      additionalProperties: true
-
-    IntelSummaryMarketItem:
-      type: object
-      properties:
-        symbol: { type: string }
-        name: { type: string }
-        price: { type: number }
-        volume24h: { type: number }
-        change24h: { type: number }
+          type: array
+          items:
+            type: object
+            additionalProperties: true
       additionalProperties: true
 
     IntelSummaryResponse:
@@ -245,22 +438,15 @@ components:
         marketSnapshot:
           type: array
           items:
-            $ref: "#/components/schemas/IntelSummaryMarketItem"
+            type: object
+            additionalProperties: true
         solanaTrending:
           type: array
           items:
             type: object
-            properties: {}
             additionalProperties: true
         social:
           type: object
-          properties:
-            topTwitterMentions:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
           additionalProperties: true
       additionalProperties: true
 
@@ -270,138 +456,45 @@ components:
         updated: { type: string }
         market:
           type: object
-          properties:
-            solana:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            coinmarketcap:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            compare:
-              type: object
-              properties: {}
-              additionalProperties: true
           additionalProperties: true
         social:
           type: object
-          properties:
-            twitter:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            discord:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            telegram:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
           additionalProperties: true
-      additionalProperties: true
-
-    TwitterLikesUser:
-      type: object
-      properties:
-        username: { type: string }
       additionalProperties: true
 
     TwitterLikesResponse:
       type: object
-      properties:
-        postId: { type: string }
-        likesCount: { type: integer }
-        users:
-          type: array
-          items:
-            $ref: "#/components/schemas/TwitterLikesUser"
-      additionalProperties: true
-
-    AlphaSignal:
-      type: object
-      properties:
-        symbol: { type: string }
-        alpha_score: { type: number }
-        liquidity_usd: { type: number }
-        volume_24h: { type: number }
-        price_change_24h: { type: number }
-        sentiment: { type: number }
-        social_boost: { type: number }
       additionalProperties: true
 
     AlphaSignalResponse:
       type: object
-      properties:
-        system: { type: string }
-        status: { type: string }
-        total_tokens_scanned: { type: integer }
-        top_signals:
-          type: array
-          items:
-            $ref: "#/components/schemas/AlphaSignal"
-      additionalProperties: true
-
-    AlphaSignalSnapshot:
-      type: object
-      properties:
-        timestamp:
-          type: string
-          format: date-time
-        data:
-          type: object
-          properties:
-            top_signals:
-              type: array
-              items:
-                $ref: "#/components/schemas/AlphaSignal"
-          additionalProperties: true
       additionalProperties: true
 
     AlphaSignalHistory:
       type: object
-      properties:
-        records:
-          type: array
-          items:
-            $ref: "#/components/schemas/AlphaSignalSnapshot"
-      additionalProperties: true
-
-    AlphaTrendItem:
-      type: object
-      properties:
-        symbol: { type: string }
-        change: { type: number }
-        momentum: { type: string }
-        trend_pct: { type: string }
       additionalProperties: true
 
     AlphaTrendResponse:
       type: object
+      additionalProperties: true
+
+    TelegramSendRequest:
+      type: object
       properties:
-        system: { type: string }
-        status: { type: string }
-        timestamp:
+        text:
           type: string
-          format: date-time
-        records_analyzed: { type: integer }
-        emerging:
-          type: array
-          items:
-            $ref: "#/components/schemas/AlphaTrendItem"
-        fading:
-          type: array
-          items:
-            $ref: "#/components/schemas/AlphaTrendItem"
+          description: Message to send to Telegram
+        parse_mode:
+          type: string
+          description: Telegram parse mode (e.g., Markdown or HTML)
+          enum: [Markdown, HTML]
+      required: [text]
+      additionalProperties: false
+
+    TelegramSendResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        detail: { type: string }
+      required: [ok]
       additionalProperties: true
