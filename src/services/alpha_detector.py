@@ -13,7 +13,7 @@ import os
 import requests
 from datetime import datetime
 from src.services.telegram_alerts import send_telegram_message
-
+from src.services.alerts_store import add_alert
 DEX_API = "https://api.dexscreener.com/latest/dex/tokens/"
 DEFAULT_TOKENS = ["SOL", "JUP", "BONK", "WIF", "PYTH", "MPLX", "JTO"]
 
