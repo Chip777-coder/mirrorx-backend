@@ -20,7 +20,13 @@ app = app_module.app  # Flask instance
 try:
     from src.realtime.fusion_stream import socketio, start_fusion_stream
     socketio.init_app(app)
-    start_fusion_stream()
-    print("✅ MirroraX Fusion Stream activated.")
+
+    # Only start background stream if explicitly enabled
+    if os.getenv("ENABLE_FUSION_STREAM", "0") == "1":
+        start_fusion_stream()
+        print("✅ MirroraX Fusion Stream activated.")
+    else:
+        print("⚠️ Fusion Stream disabled (set ENABLE_FUSION_STREAM=1 to enable).")
+
 except Exception as e:
     print(f"⚠️ SocketIO initialization skipped or failed: {e}")
