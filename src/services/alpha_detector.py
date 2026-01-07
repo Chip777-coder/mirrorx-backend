@@ -1,318 +1,278 @@
 # src/services/alpha_detector.py
 """
-MirrorX Alpha Detector (Educational)
----------------------------------------
-Scans live DexScreener pairs, identifies anomaly-style signals
-(moves in price/volume/liquidity) and pushes educational alerts.
+MirrorX Alpha Detector (Rocket Mode)
+------------------------------------
+Old behavior: scan fixed symbols like SOL/BONK/WIF...
+New behavior: dynamically discover candidates (boosts/profiles) and scan by token address.
 
-Adds:
-1) Alert types (breakout / momentum / liquidity spike / volume anomaly / mean-reversion flag)
-2) Risk context (educational invalidation guidance + risk notes)
-3) Alert persistence (alerts_store) for /api/alerts/recent
-4) DexScreener boosts + community takeovers integrated into scoring/tags
+This is the key change needed to catch 10k%+ movers:
+- discovery (Dex Radar)
+- scan by token mint/address
+- store snapshots (acceleration)
+- alert with guardrails (liquidity/volume gates)
+
+Educational tooling only. Not trade advice.
 """
 
 from __future__ import annotations
-
-import math
+import os
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.services.telegram_alerts import send_telegram_message
-from src.services.alerts_store import add_alert
-from src.services.dexscreener import (
-    fetch_token_boosts_latest,
-    fetch_token_boosts_top,
-    fetch_community_takeovers_latest,
-)
+from src.services.dex_radar import get_top_candidates
+from src.services.movers_store import record_snapshot, compute_acceleration
 
-DEX_API = "https://api.dexscreener.com/latest/dex/tokens/"
-DEFAULT_TOKENS = ["SOL", "JUP", "BONK", "WIF", "PYTH", "MPLX", "JTO"]
-
-
-def fetch_token_data(symbol: str):
-    """Fetch live pair data from DexScreener for a token symbol."""
-    try:
-        res = requests.get(f"{DEX_API}{symbol}", timeout=10)
-        res.raise_for_status()
-        return res.json().get("pairs", []) or []
-    except Exception as e:
-        print(f"[AlphaDetector] Error fetching {symbol}: {e}")
-        return []
+# Optional alert store (safe if file doesn't exist)
+try:
+    from src.services.alerts_store import add_alert  # type: ignore
+except Exception:
+    def add_alert(_source: str, _payload: dict):  # fallback no-op
+        return
 
 
-def _as_float(x, default=0.0) -> float:
+DEX_BASE = "https://api.dexscreener.com"
+DEX_TOKEN_PAIRS = f"{DEX_BASE}/latest/dex/tokens/"      # /latest/dex/tokens/{tokenAddress}
+DEX_SEARCH = f"{DEX_BASE}/latest/dex/search"            # ?q=SYMBOL
+
+# Safety gates (tune)
+MIN_LIQ_USD = float(os.getenv("ALPHA_MIN_LIQ_USD", "30000"))
+MIN_VOL_1H = float(os.getenv("ALPHA_MIN_VOL_1H", "150000"))
+MIN_VOL_24H = float(os.getenv("ALPHA_MIN_VOL_24H", "750000"))
+
+# Discovery scan size
+RADAR_LIMIT = int(os.getenv("ALPHA_RADAR_LIMIT", "60"))
+
+# Telegram: max alerts per run
+MAX_ALERTS = int(os.getenv("ALPHA_MAX_ALERTS", "5"))
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_float(x, default=0.0) -> float:
     try:
         return float(x)
     except Exception:
         return default
 
 
-def _signal_type(change_1h: float, change_24h: float, volume_24h: float, liquidity_usd: float) -> str:
+def fetch_pairs_by_address(token_address: str) -> list[dict]:
+    """Fetch live pair data from DexScreener for a Solana token mint/address."""
+    try:
+        r = requests.get(f"{DEX_TOKEN_PAIRS}{token_address}", timeout=12)
+        r.raise_for_status()
+        return r.json().get("pairs", []) or []
+    except Exception:
+        return []
+
+
+def fetch_pairs_by_search(query: str) -> list[dict]:
+    """Fallback: search by symbol/pair query."""
+    try:
+        r = requests.get(DEX_SEARCH, params={"q": query}, timeout=12)
+        r.raise_for_status()
+        return r.json().get("pairs", []) or []
+    except Exception:
+        return []
+
+
+def _best_pair_by_liquidity(pairs: list[dict]) -> dict:
+    if not pairs:
+        return {}
+    return sorted(
+        pairs,
+        key=lambda p: _safe_float((p.get("liquidity") or {}).get("usd"), 0.0),
+        reverse=True
+    )[0]
+
+
+def analyze_pair(pair: dict) -> dict | None:
     """
-    Educational classification (not a trading instruction).
+    Convert a Dex pair into a normalized candidate if it passes gates.
     """
-    # Volume anomaly first
-    if volume_24h >= 3_000_000 and liquidity_usd >= 50_000:
-        return "volume_anomaly"
+    if not isinstance(pair, dict):
+        return None
 
-    # Liquidity spike / attention
-    if liquidity_usd >= 250_000 and (change_1h >= 20 or change_24h >= 50):
-        return "liquidity_spike"
+    base = pair.get("baseToken") or {}
+    quote = pair.get("quoteToken") or {}
 
-    # Breakout / momentum
-    if change_1h >= 70 and liquidity_usd >= 25_000:
-        return "breakout"
-    if change_24h >= 120 and liquidity_usd >= 25_000:
-        return "momentum"
+    symbol = (base.get("symbol") or "").upper()
+    address = base.get("address") or ""
 
-    # Mean-reversion flag (we usually see this on pullbacks, but still educational)
-    if change_1h <= -20 and change_24h >= 40 and liquidity_usd >= 25_000:
-        return "mean_reversion_flag"
+    price_usd = _safe_float(pair.get("priceUsd"), 0.0)
 
-    return "momentum"
+    vol = pair.get("volume") or {}
+    vol_1h = _safe_float(vol.get("h1"), 0.0)
+    vol_24h = _safe_float(vol.get("h24"), 0.0)
 
+    pc = pair.get("priceChange") or {}
+    ch_m5 = _safe_float(pc.get("m5"), 0.0)
+    ch_1h = _safe_float(pc.get("h1"), 0.0)
+    ch_24h = _safe_float(pc.get("h24"), 0.0)
 
-def _risk_context(price: float, signal_type: str) -> dict:
-    """
-    Educational risk framework (NOT a trade instruction).
-    Provides a rough invalidation guide + notes.
-    """
-    if price <= 0:
-        return {
-            "invalidation_price": None,
-            "risk_note": "Price unavailable for risk context.",
-        }
+    liq = pair.get("liquidity") or {}
+    liq_usd = _safe_float(liq.get("usd"), 0.0)
 
-    # Simple heuristic bands by signal type
-    if signal_type in ("breakout", "momentum"):
-        invalidation = price * (1 - 0.15)  # ~15% pullback invalidation guide
-        note = "Educational: for momentum/breakouts, many traders invalidate on a ~10–20% reversal or loss of key level."
-    elif signal_type in ("liquidity_spike",):
-        invalidation = price * (1 - 0.12)
-        note = "Educational: liquidity spikes can fade—watch spread, liquidity drop, and failed continuation."
-    elif signal_type in ("volume_anomaly",):
-        invalidation = price * (1 - 0.18)
-        note = "Educational: volume anomalies can be news/rotation driven—watch for volume collapse after the spike."
-    else:
-        invalidation = price * (1 - 0.10)
-        note = "Educational: mean-reversion setups often invalidate on continued weakness / lower lows."
+    # Core “quality” gates — reduces junk
+    if liq_usd < MIN_LIQ_USD:
+        return None
+    if not (vol_1h >= MIN_VOL_1H or vol_24h >= MIN_VOL_24H):
+        return None
 
-    return {
-        "invalidation_price": round(invalidation, 8),
-        "risk_note": note,
+    # Must be moving (avoid dead tokens)
+    if max(ch_m5, ch_1h, ch_24h) < 25:
+        return None
+
+    out = {
+        "address": address,
+        "symbol": symbol,
+        "quote": (quote.get("symbol") or "").upper(),
+        "price": price_usd,
+        "change_m5": ch_m5,
+        "change_1h": ch_1h,
+        "change_24h": ch_24h,
+        "volume_1h": vol_1h,
+        "volume_24h": vol_24h,
+        "liquidity": liq_usd,
+        "dex": pair.get("dexId"),
+        "pairAddress": pair.get("pairAddress"),
+        "url": pair.get("url"),
+        "chainId": pair.get("chainId"),
     }
+    return out
 
 
-def _fetch_boost_and_takeover_sets() -> tuple[set[str], set[str]]:
-    """
-    Returns:
-      boosted_token_addresses (set)
-      takeover_token_addresses (set)
-    """
-    boosted = set()
-    takeovers = set()
-
-    # Boosts latest + top
-    for item in (fetch_token_boosts_latest() or []):
-        addr = (item.get("tokenAddress") or "").strip()
-        if addr:
-            boosted.add(addr)
-
-    for item in (fetch_token_boosts_top() or []):
-        addr = (item.get("tokenAddress") or "").strip()
-        if addr:
-            boosted.add(addr)
-
-    # Community takeovers
-    for item in (fetch_community_takeovers_latest() or []):
-        addr = (item.get("tokenAddress") or "").strip()
-        if addr:
-            takeovers.add(addr)
-
-    return boosted, takeovers
-
-
-def analyze_pairs(pairs, boosted_addrs: set[str] | None = None, takeover_addrs: set[str] | None = None):
-    """Evaluate Dex pairs and return candidate signals."""
-    boosted_addrs = boosted_addrs or set()
-    takeover_addrs = takeover_addrs or set()
-
-    alpha_candidates = []
-
-    for p in pairs:
-        try:
-            base = p.get("baseToken", {}) or {}
-            quote = p.get("quoteToken", {}) or {}
-
-            base_symbol = (base.get("symbol") or "").strip()
-            quote_symbol = (quote.get("symbol") or "").strip()
-            base_addr = (base.get("address") or "").strip()
-
-            price_usd = _as_float(p.get("priceUsd", 0))
-            volume_24h = _as_float((p.get("volume") or {}).get("h24", 0))
-
-            pc = p.get("priceChange") or {}
-            change_1h = _as_float(pc.get("h1", 0))
-            change_24h = _as_float(pc.get("h24", 0))
-
-            liquidity_usd = _as_float((p.get("liquidity") or {}).get("usd", 0))
-
-            # Baseline filters (keeps spam down)
-            if liquidity_usd < 20_000:
-                continue
-
-            # Detect “interesting enough” move
-            if not (change_1h > 35 or change_24h > 80 or volume_24h > 750_000):
-                continue
-
-            stype = _signal_type(change_1h, change_24h, volume_24h, liquidity_usd)
-
-            tags = []
-            bonus = 0.0
-
-            if base_addr and base_addr in boosted_addrs:
-                tags.append("dex_boost")
-                bonus += 25.0
-
-            if base_addr and base_addr in takeover_addrs:
-                tags.append("community_takeover")
-                bonus += 20.0
-
-            # Educational scoring (not “profit” scoring)
-            # Uses change + log(volume) + log(liquidity) + bonuses
-            score = (
-                (change_1h * 0.7) +
-                (change_24h * 0.3) +
-                math.log(max(volume_24h, 1.0), 10) * 8.0 +
-                math.log(max(liquidity_usd, 1.0), 10) * 6.0 +
-                bonus
-            )
-
-            alpha_candidates.append({
-                "symbol": base_symbol or "UNKNOWN",
-                "quote": quote_symbol or "",
-                "base_address": base_addr or None,
-                "price": price_usd,
-                "change_1h": change_1h,
-                "change_24h": change_24h,
-                "volume": volume_24h,
-                "liquidity": liquidity_usd,
-                "dex": p.get("dexId"),
-                "url": p.get("url"),
-                "signal_type": stype,
-                "tags": tags,
-                "score": round(score, 4),
-            })
-
-        except Exception as e:
-            print(f"[AlphaDetector] Analysis error: {e}")
-
-    return alpha_candidates
-
-
-def detect_alpha_tokens(symbols=None):
-    """Run alpha detection across token symbols."""
-    symbols = symbols or DEFAULT_TOKENS
-
-    boosted, takeovers = _fetch_boost_and_takeover_sets()
-
-    detected = []
-    for sym in symbols:
-        pairs = fetch_token_data(sym)
-        detected.extend(analyze_pairs(pairs, boosted_addrs=boosted, takeover_addrs=takeovers))
-
-    # Rank by score
-    return sorted(detected, key=lambda x: x.get("score", 0), reverse=True)
-
-
-def _human_summary(token: dict) -> str:
-    sym = token.get("symbol", "UNK")
-    stype = token.get("signal_type", "momentum")
-    vol_m = (token.get("volume", 0) or 0) / 1_000_000
-    liq = token.get("liquidity", 0) or 0
+def generate_alpha_summary(token: dict) -> str:
+    sym = token.get("symbol", "UNKNOWN")
+    ch1 = token.get("change_1h", 0)
+    ch24 = token.get("change_24h", 0)
+    vol1 = token.get("volume_1h", 0)
+    liq = token.get("liquidity", 0)
     dex = token.get("dex", "DEX")
 
+    if ch1 >= 150:
+        return (
+            f"{sym} is exploding (+{ch1:.1f}% 1h) with ~${vol1/1_000_000:.2f}M 1h volume on {dex}. "
+            f"Liquidity is ${liq:,.0f} — stronger moves usually keep liquidity rising."
+        )
+    if ch24 >= 300:
+        return (
+            f"{sym} is in a high-volatility expansion (+{ch24:.1f}% 24h). "
+            f"Liquidity ${liq:,.0f} with heavy participation on {dex}."
+        )
     return (
-        f"{sym} flagged as <b>{stype}</b> on {dex}. "
-        f"Volume ~{vol_m:.2f}M (24h), liquidity ~${liq:,.0f}."
+        f"{sym} is accelerating (+{ch1:.1f}% 1h) with ${liq:,.0f} liquidity and "
+        f"~${vol1/1_000_000:.2f}M 1h volume on {dex}."
     )
 
 
 def format_alert(token: dict) -> str:
-    """Telegram message (HTML) with type + risk context + tags."""
-    sym = token.get("symbol", "UNK")
-    quote = token.get("quote", "")
-    price = _as_float(token.get("price", 0))
-    ch1 = _as_float(token.get("change_1h", 0))
-    ch24 = _as_float(token.get("change_24h", 0))
-    vol = _as_float(token.get("volume", 0))
-    liq = _as_float(token.get("liquidity", 0))
-    dex = token.get("dex", "DEX")
-    url = token.get("url", "")
+    accel = compute_acceleration(token.get("address", ""))
+    accel_hint = accel.get("accel_hint", "n/a")
 
-    stype = token.get("signal_type", "momentum")
-    tags = token.get("tags", []) or []
-    score = token.get("score", 0)
+    narrative = generate_alpha_summary(token)
 
-    risk = _risk_context(price, stype)
-    inv = risk.get("invalidation_price")
-
-    tags_line = ""
-    if tags:
-        tags_line = " | Tags: " + ", ".join(tags)
-
-    summary = _human_summary(token)
-
-    msg = (
-        f"<b>📊 MirrorX Alpha Alert</b>\n"
-        f"Type: <b>{stype}</b>{tags_line}\n"
-        f"Score: {score}\n"
-        f"Pair: <b>{sym}</b> / {quote}\n"
-        f"Price: ${price:.8f}\n"
-        f"1h: {ch1}% | 24h: {ch24}%\n"
-        f"24h Volume: ${vol:,.0f}\n"
-        f"Liquidity: ${liq:,.0f}\n"
-        f"DEX: {dex}\n\n"
-        f"{summary}\n\n"
-        f"<b>🧯 Risk context (educational)</b>\n"
-        f"Intra-trend invalidation guide: {('~$' + str(inv)) if inv else 'N/A'}\n"
-        f"{risk.get('risk_note','')}\n\n"
-        f"<a href='{url}'>View on DexScreener</a>\n\n"
-        f"⚠️ Educational signal only — not financial advice."
+    message = (
+        f"<b>📊 MirrorX Rocket Alert</b>\n"
+        f"Token: <b>{token.get('symbol')}</b> / {token.get('quote')}\n"
+        f"Mint: <code>{token.get('address')}</code>\n"
+        f"Price: ${_safe_float(token.get('price'), 0):.8f}\n"
+        f"5m: {token.get('change_m5', 0):.1f}% | 1h: {token.get('change_1h', 0):.1f}% | 24h: {token.get('change_24h', 0):.1f}%\n"
+        f"Vol 1h: ${_safe_float(token.get('volume_1h'), 0):,.0f} | Vol 24h: ${_safe_float(token.get('volume_24h'), 0):,.0f}\n"
+        f"Liq: ${_safe_float(token.get('liquidity'), 0):,.0f} | DEX: {token.get('dex')}\n"
+        f"Acceleration: <b>{accel_hint}</b>\n\n"
+        f"{narrative}\n\n"
+        f"<a href='{token.get('url')}'>View on DexScreener</a>\n\n"
+        f"⚠️ Educational alert only. Use strict risk controls; fast movers can reverse hard."
     )
-    return msg
+    return message
+
+
+def detect_alpha_tokens() -> list[dict]:
+    """
+    1) Discover candidates from Dex Radar (boosts/profiles)
+    2) Fetch best pair per token address
+    3) Apply gates + rank
+    """
+    candidates = get_top_candidates(limit=RADAR_LIMIT) or []
+    if not candidates:
+        return []
+
+    found: list[dict] = []
+
+    for c in candidates:
+        addr = c.get("address")
+        if not addr:
+            continue
+
+        pairs = fetch_pairs_by_address(addr)
+        best = _best_pair_by_liquidity(pairs)
+        if not best:
+            continue
+
+        token = analyze_pair(best)
+        if not token:
+            continue
+
+        # Store snapshot for acceleration tracking
+        record_snapshot("alpha_detector", {
+            "address": token.get("address"),
+            "symbol": token.get("symbol"),
+            "priceUsd": token.get("price"),
+            "liquidityUsd": token.get("liquidity"),
+            "volumeH1": token.get("volume_1h"),
+            "volumeH24": token.get("volume_24h"),
+            "changeM5": token.get("change_m5"),
+            "changeH1": token.get("change_1h"),
+            "changeH24": token.get("change_24h"),
+            "url": token.get("url"),
+            "ts": _now_iso(),
+        })
+
+        found.append(token)
+
+    # Rank: emphasize short-term acceleration + liquidity + volume
+    def score(t: dict) -> float:
+        return (
+            _safe_float(t.get("change_m5"), 0) * 1.3 +
+            _safe_float(t.get("change_1h"), 0) * 0.9 +
+            _safe_float(t.get("volume_1h"), 0) / 250_000.0 +
+            _safe_float(t.get("liquidity"), 0) / 150_000.0
+        )
+
+    found.sort(key=score, reverse=True)
+    return found
 
 
 def push_alpha_alerts():
-    """Detect + store + push alerts to Telegram."""
-    print("[SCHEDULER] Running Alpha Detector...")
-
+    """Detect and push live rocket alerts to Telegram."""
+    print("[SCHEDULER] Running Rocket Alpha Detector...")
     detected = detect_alpha_tokens()
+
     if not detected:
-        print("[AlphaDetector] No standout alpha signals.")
+        print("[AlphaDetector] No standout rocket signals.")
         return
 
-    top_tokens = detected[:5]
-    for token in top_tokens:
+    top = detected[:MAX_ALERTS]
+
+    for token in top:
         msg = format_alert(token)
 
-        # Store for /api/alerts/recent + GPT summaries
-        add_alert(
-            "alpha_detector",
-            {
+        # store in alerts store (if enabled)
+        try:
+            add_alert("alpha_detector", {
                 "symbol": token.get("symbol"),
+                "address": token.get("address"),
                 "url": token.get("url"),
-                "signal_type": token.get("signal_type"),
-                "tags": token.get("tags", []),
-                "score": token.get("score"),
                 "message": msg,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            },
-        )
+            })
+        except Exception:
+            pass
 
         send_telegram_message(msg)
-        print(f"[AlphaDetector] Sent alert for {token.get('symbol')}")
+        print(f"[AlphaDetector] Sent rocket alert for {token.get('symbol')} ({token.get('address')})")
 
 
 if __name__ == "__main__":
