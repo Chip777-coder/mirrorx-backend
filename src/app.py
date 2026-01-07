@@ -89,9 +89,17 @@ app.register_blueprint(signal_history_bp, url_prefix="/api")
 from src.routes.signals_history import signals_history_bp
 app.register_blueprint(signals_history_bp)
 
-# ✅ NEW: Alpha Trend Engine
+# ✅ Alpha Trend Engine
 from src.routes.signals_trends import signals_trends_bp
 app.register_blueprint(signals_trends_bp, url_prefix="/api")
+
+# ✅ DexScreener Proxy (THIS is the one you wanted)
+from src.routes.dex_proxy import dex_proxy_bp
+app.register_blueprint(dex_proxy_bp, url_prefix="/api", name="dex_proxy_api")
+
+# ✅ Alerts API (Telegram send endpoint, recent alerts, etc.)
+from src.routes.alerts_api import alerts_api_bp
+app.register_blueprint(alerts_api_bp, url_prefix="/api", name="alerts_api")
 
 # ---- Conditional Blueprints ----
 try:
@@ -123,15 +131,7 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
 
 from src.routes.alerts_test import alerts_test_bp
 app.register_blueprint(alerts_test_bp)
-from src.routes.dex_proxy import dex_proxy_bp
-app.register_blueprint(dex_proxy_bp, url_prefix="/api")
-from src.routes.alerts_api import alerts_api_bp
-app.register_blueprint(alerts_api_bp, url_prefix="/api")
-from src.routes.alerts_api import alerts_api_bp
-from src.routes.dex_proxy import dex_proxy_bp
-app.register_blueprint(dex_proxy_bp)
-from src.routes.dex_proxy import dex_proxy_bp
-app.register_blueprint(dex_proxy_bp, url_prefix="/api", name="dex_proxy_api")
+
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
