@@ -1,20 +1,27 @@
 # src/services/alpha_detector.py
 """
-MirrorX Alpha Detector (Rocket Mode)
-------------------------------------
+MirrorX Alpha Detector (Rocket Mode + Moonshot Exception)
+---------------------------------------------------------
 Old behavior: scan fixed symbols like SOL/BONK/WIF...
 New behavior: dynamically discover candidates (boosts/profiles) and scan by token address.
 
-This is the key change needed to catch 10k%+ movers:
-- discovery (Dex Radar)
-- scan by token mint/address
-- store snapshots (acceleration)
-- alert with guardrails (liquidity/volume gates)
+Goal:
+- Catch early-stage rockets (10k%+ movers) without drowning in junk.
+
+How:
+1) Discovery (Dex Radar): boosts/profiles/takeovers => candidate token addresses
+2) Fetch best pair per token address
+3) Apply gates:
+   - Normal "quality" gate (liquidity + volume + movement)
+   - Moonshot exception gate (lower liquidity allowed ONLY if move is extreme + volume non-trivial)
+4) Store snapshots (movers_store) for acceleration context
+5) Alert to Telegram + persist to alerts_store (optional)
 
 Educational tooling only. Not trade advice.
 """
 
 from __future__ import annotations
+
 import os
 import requests
 from datetime import datetime, timezone
@@ -32,13 +39,28 @@ except Exception:
 
 
 DEX_BASE = "https://api.dexscreener.com"
-DEX_TOKEN_PAIRS = f"{DEX_BASE}/latest/dex/tokens/"      # /latest/dex/tokens/{tokenAddress}
-DEX_SEARCH = f"{DEX_BASE}/latest/dex/search"            # ?q=SYMBOL
+DEX_TOKEN_PAIRS = f"{DEX_BASE}/latest/dex/tokens/"  # /latest/dex/tokens/{tokenAddress}
+DEX_SEARCH = f"{DEX_BASE}/latest/dex/search"        # ?q=SYMBOL
 
-# Safety gates (tune)
+# ----------------------------
+# Normal safety gates (tune)
+# ----------------------------
 MIN_LIQ_USD = float(os.getenv("ALPHA_MIN_LIQ_USD", "30000"))
 MIN_VOL_1H = float(os.getenv("ALPHA_MIN_VOL_1H", "150000"))
 MIN_VOL_24H = float(os.getenv("ALPHA_MIN_VOL_24H", "750000"))
+
+# ----------------------------
+# Moonshot exception gates
+# (lets us catch early ignition)
+# ----------------------------
+MOONSHOT_ENABLE = os.getenv("ALPHA_MOONSHOT_ENABLE", "1") == "1"
+MOONSHOT_MIN_LIQ_USD = float(os.getenv("ALPHA_MOONSHOT_MIN_LIQ_USD", "8000"))
+MOONSHOT_MIN_VOL_1H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_1H", "25000"))
+MOONSHOT_CH_M5 = float(os.getenv("ALPHA_MOONSHOT_CH_M5", "80"))     # 5m change threshold
+MOONSHOT_CH_1H = float(os.getenv("ALPHA_MOONSHOT_CH_1H", "250"))    # 1h change threshold
+
+# Movement floor (applies to both paths)
+MIN_MOVE_ANY = float(os.getenv("ALPHA_MIN_MOVE_ANY", "25"))         # must be moving at least this much in m5/h1/h24
 
 # Discovery scan size
 RADAR_LIMIT = int(os.getenv("ALPHA_RADAR_LIMIT", "60"))
@@ -88,6 +110,29 @@ def _best_pair_by_liquidity(pairs: list[dict]) -> dict:
     )[0]
 
 
+def _passes_normal_gate(liq_usd: float, vol_1h: float, vol_24h: float) -> bool:
+    return (liq_usd >= MIN_LIQ_USD) and (vol_1h >= MIN_VOL_1H or vol_24h >= MIN_VOL_24H)
+
+
+def _passes_moonshot_gate(liq_usd: float, vol_1h: float, ch_m5: float, ch_1h: float) -> bool:
+    """
+    Moonshot exception:
+    - allow lower liquidity, BUT require:
+      - some real volume
+      - extreme short-term move
+    This catches early ignition before liquidity scales.
+    """
+    if not MOONSHOT_ENABLE:
+        return False
+    if liq_usd < MOONSHOT_MIN_LIQ_USD:
+        return False
+    if vol_1h < MOONSHOT_MIN_VOL_1H:
+        return False
+    if (ch_m5 >= MOONSHOT_CH_M5) or (ch_1h >= MOONSHOT_CH_1H):
+        return True
+    return False
+
+
 def analyze_pair(pair: dict) -> dict | None:
     """
     Convert a Dex pair into a normalized candidate if it passes gates.
@@ -115,15 +160,19 @@ def analyze_pair(pair: dict) -> dict | None:
     liq = pair.get("liquidity") or {}
     liq_usd = _safe_float(liq.get("usd"), 0.0)
 
-    # Core “quality” gates — reduces junk
-    if liq_usd < MIN_LIQ_USD:
-        return None
-    if not (vol_1h >= MIN_VOL_1H or vol_24h >= MIN_VOL_24H):
+    # Must be moving (avoid dead tokens)
+    if max(ch_m5, ch_1h, ch_24h) < MIN_MOVE_ANY:
         return None
 
-    # Must be moving (avoid dead tokens)
-    if max(ch_m5, ch_1h, ch_24h) < 25:
+    # Gate logic:
+    # 1) Normal quality gate OR 2) Moonshot exception gate
+    normal_ok = _passes_normal_gate(liq_usd, vol_1h, vol_24h)
+    moonshot_ok = _passes_moonshot_gate(liq_usd, vol_1h, ch_m5, ch_1h)
+
+    if not (normal_ok or moonshot_ok):
         return None
+
+    gate_used = "normal" if normal_ok else "moonshot"
 
     out = {
         "address": address,
@@ -140,22 +189,32 @@ def analyze_pair(pair: dict) -> dict | None:
         "pairAddress": pair.get("pairAddress"),
         "url": pair.get("url"),
         "chainId": pair.get("chainId"),
+        "gate": gate_used,
     }
     return out
 
 
 def generate_alpha_summary(token: dict) -> str:
     sym = token.get("symbol", "UNKNOWN")
-    ch1 = token.get("change_1h", 0)
-    ch24 = token.get("change_24h", 0)
-    vol1 = token.get("volume_1h", 0)
-    liq = token.get("liquidity", 0)
+    ch1 = _safe_float(token.get("change_1h"), 0)
+    ch24 = _safe_float(token.get("change_24h"), 0)
+    ch5 = _safe_float(token.get("change_m5"), 0)
+    vol1 = _safe_float(token.get("volume_1h"), 0)
+    liq = _safe_float(token.get("liquidity"), 0)
     dex = token.get("dex", "DEX")
+    gate = token.get("gate", "normal")
+
+    if gate == "moonshot":
+        return (
+            f"{sym} triggered the <b>Moonshot</b> gate (+{ch5:.1f}% 5m / +{ch1:.1f}% 1h) "
+            f"with ${liq:,.0f} liq and ~${vol1/1_000_000:.2f}M 1h volume on {dex}. "
+            f"These can be explosive — and can also reverse violently."
+        )
 
     if ch1 >= 150:
         return (
             f"{sym} is exploding (+{ch1:.1f}% 1h) with ~${vol1/1_000_000:.2f}M 1h volume on {dex}. "
-            f"Liquidity is ${liq:,.0f} — stronger moves usually keep liquidity rising."
+            f"Liquidity is ${liq:,.0f} — strong rockets usually keep liquidity rising."
         )
     if ch24 >= 300:
         return (
@@ -163,7 +222,7 @@ def generate_alpha_summary(token: dict) -> str:
             f"Liquidity ${liq:,.0f} with heavy participation on {dex}."
         )
     return (
-        f"{sym} is accelerating (+{ch1:.1f}% 1h) with ${liq:,.0f} liquidity and "
+        f"{sym} is accelerating (+{ch1:.1f}% 1h / +{ch5:.1f}% 5m) with ${liq:,.0f} liquidity and "
         f"~${vol1/1_000_000:.2f}M 1h volume on {dex}."
     )
 
@@ -177,6 +236,7 @@ def format_alert(token: dict) -> str:
     message = (
         f"<b>📊 MirrorX Rocket Alert</b>\n"
         f"Token: <b>{token.get('symbol')}</b> / {token.get('quote')}\n"
+        f"Gate: <b>{token.get('gate','normal')}</b>\n"
         f"Mint: <code>{token.get('address')}</code>\n"
         f"Price: ${_safe_float(token.get('price'), 0):.8f}\n"
         f"5m: {token.get('change_m5', 0):.1f}% | 1h: {token.get('change_1h', 0):.1f}% | 24h: {token.get('change_24h', 0):.1f}%\n"
@@ -228,6 +288,7 @@ def detect_alpha_tokens() -> list[dict]:
             "changeH1": token.get("change_1h"),
             "changeH24": token.get("change_24h"),
             "url": token.get("url"),
+            "gate": token.get("gate"),
             "ts": _now_iso(),
         })
 
@@ -235,8 +296,11 @@ def detect_alpha_tokens() -> list[dict]:
 
     # Rank: emphasize short-term acceleration + liquidity + volume
     def score(t: dict) -> float:
+        gate = t.get("gate", "normal")
+        gate_boost = 15.0 if gate == "moonshot" else 0.0  # small boost so moonshots bubble up
         return (
-            _safe_float(t.get("change_m5"), 0) * 1.3 +
+            gate_boost +
+            _safe_float(t.get("change_m5"), 0) * 1.35 +
             _safe_float(t.get("change_1h"), 0) * 0.9 +
             _safe_float(t.get("volume_1h"), 0) / 250_000.0 +
             _safe_float(t.get("liquidity"), 0) / 150_000.0
@@ -266,6 +330,7 @@ def push_alpha_alerts():
                 "symbol": token.get("symbol"),
                 "address": token.get("address"),
                 "url": token.get("url"),
+                "gate": token.get("gate"),
                 "message": msg,
             })
         except Exception:
