@@ -131,7 +131,12 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
 
 from src.routes.alerts_test import alerts_test_bp
 app.register_blueprint(alerts_test_bp)
-
+# ✅ MirrorStock detector (safe import)
+try:
+    from src.services.mirrorstock_detector import push_mirrorstock_alerts
+except Exception as e:
+    push_mirrorstock_alerts = None
+    print(f"[WARN] MirrorStock detector not loaded: {e}")
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
@@ -182,43 +187,69 @@ import requests
 
 # ✅ Import Alpha Detectors
 from src.services.alpha_detector import push_alpha_alerts
-from src.services.alpha_fusion import push_fused_alpha_alerts
+
+# Alpha fusion may fail if it still imports old alpha_detector functions
+# Keep it optional so deploy doesn't die
+try:
+    from src.services.alpha_fusion import push_fused_alpha_alerts
+except Exception as e:
+    push_fused_alpha_alerts = None
+    print(f"[WARN] Alpha Fusion not loaded: {e}")
+
+# ✅ MirrorStock detector (safe import)
+try:
+    from src.services.mirrorstock_detector import push_mirrorstock_alerts
+except Exception as e:
+    push_mirrorstock_alerts = None
+    print(f"[WARN] MirrorStock detector not loaded: {e}")
 
 
 def trigger_trends_job():
-    """Unified job runner for all intelligence engines."""
+    """MirrorX unified job runner (runs every 3 hours)."""
     try:
-        print(f"[SCHEDULER] Triggering unified job at {datetime.utcnow().isoformat()}Z")
+        print(f"[SCHEDULER] Triggering MirrorX cycle at {datetime.utcnow().isoformat()}Z")
 
         # 1️⃣ Run Dex-only Alpha Detector
         print("[SCHEDULER] → Running Alpha Detector (DEX layer)…")
         push_alpha_alerts()
 
-        # 2️⃣ Run Dex + Fusion Alpha Detector
-        print("[SCHEDULER] → Running Alpha Fusion (DEX + Fusion layer)…")
-        push_fused_alpha_alerts()
+        # 2️⃣ Run Dex + Fusion Alpha Detector (optional)
+        if push_fused_alpha_alerts:
+            print("[SCHEDULER] → Running Alpha Fusion (DEX + Fusion layer)…")
+            push_fused_alpha_alerts()
+        else:
+            print("[SCHEDULER] → Alpha Fusion skipped (not loaded).")
 
         # 3️⃣ Trigger trend engine endpoint
         res = requests.get("https://mirrorx-backend.onrender.com/api/signals/trends", timeout=20)
         print(f"[SCHEDULER] Trend job response: {res.status_code}")
 
-        print("✅ MirrorX unified job cycle complete.\n")
+        print("✅ MirrorX job cycle complete.\n")
     except Exception as e:
-        print(f"[SCHEDULER] Unified job failed: {e}")
-print("[SCHEDULER] → Running MirrorStock Detector…")
-push_mirrorstock_alerts()
+        print(f"[SCHEDULER] MirrorX unified job failed: {e}")
+
 
 def start_scheduler():
-    """Start the background scheduler in a separate thread."""
+    """Start schedulers in a background thread."""
     scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(trigger_trends_job, "interval", hours=3, next_run_time=datetime.utcnow())
-    scheduler.start()
-    print("✅ MirrorX Unified Scheduler initialized (runs every 3 hours).")
 
-from src.services.mirrorstock_detector import push_mirrorstock_alerts
+    # MirrorX: every 3 hours
+    scheduler.add_job(trigger_trends_job, "interval", hours=3, next_run_time=datetime.utcnow())
+
+    # MirrorStock: every 1 hour (runs separately)
+    if push_mirrorstock_alerts:
+        scheduler.add_job(push_mirrorstock_alerts, "interval", hours=1, next_run_time=datetime.utcnow())
+        print("✅ MirrorStock Scheduler initialized (runs every 1 hour).")
+    else:
+        print("⚠️ MirrorStock Scheduler not enabled (detector not loaded).")
+
+    scheduler.start()
+    print("✅ Scheduler initialized.")
+
+
 # Run the scheduler after app creation (only if enabled)
 if os.getenv("ENABLE_SCHEDULER", "0") == "1":
-    threading.Thread(target=start_scheduler).start()
+    threading.Thread(target=start_scheduler, daemon=True).start()
 else:
     print("⚠️ Scheduler disabled (set ENABLE_SCHEDULER=1 to enable).")
 
