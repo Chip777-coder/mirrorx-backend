@@ -205,7 +205,8 @@ def trigger_trends_job():
         print("✅ MirrorX unified job cycle complete.\n")
     except Exception as e:
         print(f"[SCHEDULER] Unified job failed: {e}")
-
+print("[SCHEDULER] → Running MirrorStock Detector…")
+push_mirrorstock_alerts()
 
 def start_scheduler():
     """Start the background scheduler in a separate thread."""
@@ -214,7 +215,7 @@ def start_scheduler():
     scheduler.start()
     print("✅ MirrorX Unified Scheduler initialized (runs every 3 hours).")
 
-
+from src.services.mirrorstock_detector import push_mirrorstock_alerts
 # Run the scheduler after app creation (only if enabled)
 if os.getenv("ENABLE_SCHEDULER", "0") == "1":
     threading.Thread(target=start_scheduler).start()
