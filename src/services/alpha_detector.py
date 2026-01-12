@@ -58,6 +58,23 @@ MOONSHOT_MIN_LIQ_USD = float(os.getenv("ALPHA_MOONSHOT_MIN_LIQ_USD", "8000"))
 MOONSHOT_MIN_VOL_1H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_1H", "25000"))
 MOONSHOT_CH_M5 = float(os.getenv("ALPHA_MOONSHOT_CH_M5", "80"))     # 5m change threshold
 MOONSHOT_CH_1H = float(os.getenv("ALPHA_MOONSHOT_CH_1H", "250"))    # 1h change threshold
+# --- Moonshot Exception v2 (early ignition)
+MOONSHOT_LIQ_MIN = float(os.getenv("ALPHA_MOONSHOT_LIQ_MIN", "8000"))
+MOONSHOT_VOL_24H_MIN = float(os.getenv("ALPHA_MOONSHOT_VOL_24H_MIN", "150000"))
+MOONSHOT_CH_M5_MIN = float(os.getenv("ALPHA_MOONSHOT_CH_M5_MIN", "35"))   # big 5m candle
+MOONSHOT_CH_1H_MIN = float(os.getenv("ALPHA_MOONSHOT_CH_1H_MIN", "120"))  # or massive 1h
+
+moonshot_ok = (
+    liq_usd >= MOONSHOT_LIQ_MIN and
+    vol_24h >= MOONSHOT_VOL_24H_MIN and
+    (ch_m5 >= MOONSHOT_CH_M5_MIN or ch_1h >= MOONSHOT_CH_1H_MIN)
+)
+
+# If normal gates fail, allow moonshot
+if not normal_ok and not moonshot_ok:
+    return None
+
+out["gate"] = "moonshot_exception" if (moonshot_ok and not normal_ok) else "normal"
 
 # Movement floor (applies to both paths)
 MIN_MOVE_ANY = float(os.getenv("ALPHA_MIN_MOVE_ANY", "25"))         # must be moving at least this much in m5/h1/h24
