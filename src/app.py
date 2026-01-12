@@ -185,6 +185,15 @@ from datetime import datetime
 import threading
 import requests
 
+# ✅ Birdeye WS ignition (optional)
+if os.getenv("ENABLE_BIRDEYE_WS", "0") == "1":
+    try:
+        from src.services.birdeye_ws import start_birdeye_ws_thread
+        start_birdeye_ws_thread()
+    except Exception as e:
+        print(f"[WARN] Birdeye WS not started: {e}")
+else:
+    print("⚠️ Birdeye WS disabled (set ENABLE_BIRDEYE_WS=1 to enable).")
 # ✅ Import Alpha Detectors
 from src.services.alpha_detector import push_alpha_alerts
 
