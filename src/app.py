@@ -246,7 +246,12 @@ def start_scheduler():
     scheduler.start()
     print("✅ Scheduler initialized.")
 
-
+# ✅ MirrorStock detector (safe import)
+try:
+    from src.services.mirrorstock_detector import push_mirrorstock_alerts
+except Exception as e:
+    push_mirrorstock_alerts = None
+    print(f"[WARN] MirrorStock detector not loaded: {e}")
 # Run the scheduler after app creation (only if enabled)
 if os.getenv("ENABLE_SCHEDULER", "0") == "1":
     threading.Thread(target=start_scheduler, daemon=True).start()
