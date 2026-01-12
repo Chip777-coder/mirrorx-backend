@@ -3,19 +3,21 @@
 MirrorX Alpha Detector (Rocket Mode + Moonshot Exception)
 ---------------------------------------------------------
 Old behavior: scan fixed symbols like SOL/BONK/WIF...
-New behavior: dynamically discover candidates (boosts/profiles) and scan by token address.
+New behavior: dynamically discover candidates (boosts/profiles/takeovers) and scan by token address.
 
 Goal:
 - Catch early-stage rockets (10k%+ movers) without drowning in junk.
 
 How:
 1) Discovery (Dex Radar): boosts/profiles/takeovers => candidate token addresses
-2) Fetch best pair per token address
-3) Apply gates:
-   - Normal "quality" gate (liquidity + volume + movement)
+2) Fetch ALL pairs per token address
+3) Select BEST pair by "trend combo" (momentum + participation), not just highest liquidity
+4) Apply gates:
+   - Normal quality gate (liquidity + volume + movement)
    - Moonshot exception gate (lower liquidity allowed ONLY if move is extreme + volume non-trivial)
-4) Store snapshots (movers_store) for acceleration context
-5) Alert to Telegram + persist to alerts_store (optional)
+     + includes 24h volume fallback to catch early ignition
+5) Store snapshots (movers_store) for acceleration context
+6) Alert to Telegram + persist to alerts_store (optional)
 
 Educational tooling only. Not trade advice.
 """
@@ -56,25 +58,9 @@ MIN_VOL_24H = float(os.getenv("ALPHA_MIN_VOL_24H", "750000"))
 MOONSHOT_ENABLE = os.getenv("ALPHA_MOONSHOT_ENABLE", "1") == "1"
 MOONSHOT_MIN_LIQ_USD = float(os.getenv("ALPHA_MOONSHOT_MIN_LIQ_USD", "8000"))
 MOONSHOT_MIN_VOL_1H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_1H", "25000"))
+MOONSHOT_MIN_VOL_24H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_24H", "150000"))
 MOONSHOT_CH_M5 = float(os.getenv("ALPHA_MOONSHOT_CH_M5", "80"))     # 5m change threshold
 MOONSHOT_CH_1H = float(os.getenv("ALPHA_MOONSHOT_CH_1H", "250"))    # 1h change threshold
-# --- Moonshot Exception v2 (early ignition)
-MOONSHOT_LIQ_MIN = float(os.getenv("ALPHA_MOONSHOT_LIQ_MIN", "8000"))
-MOONSHOT_VOL_24H_MIN = float(os.getenv("ALPHA_MOONSHOT_VOL_24H_MIN", "150000"))
-MOONSHOT_CH_M5_MIN = float(os.getenv("ALPHA_MOONSHOT_CH_M5_MIN", "35"))   # big 5m candle
-MOONSHOT_CH_1H_MIN = float(os.getenv("ALPHA_MOONSHOT_CH_1H_MIN", "120"))  # or massive 1h
-
-moonshot_ok = (
-    liq_usd >= MOONSHOT_LIQ_MIN and
-    vol_24h >= MOONSHOT_VOL_24H_MIN and
-    (ch_m5 >= MOONSHOT_CH_M5_MIN or ch_1h >= MOONSHOT_CH_1H_MIN)
-)
-
-# If normal gates fail, allow moonshot
-if not normal_ok and not moonshot_ok:
-    return None
-
-out["gate"] = "moonshot_exception" if (moonshot_ok and not normal_ok) else "normal"
 
 # Movement floor (applies to both paths)
 MIN_MOVE_ANY = float(os.getenv("ALPHA_MIN_MOVE_ANY", "25"))         # must be moving at least this much in m5/h1/h24
@@ -118,6 +104,7 @@ def fetch_pairs_by_search(query: str) -> list[dict]:
 
 
 def _best_pair_by_liquidity(pairs: list[dict]) -> dict:
+    """Legacy selector: keeps the highest-liquidity pool."""
     if not pairs:
         return {}
     return sorted(
@@ -127,15 +114,49 @@ def _best_pair_by_liquidity(pairs: list[dict]) -> dict:
     )[0]
 
 
+def _best_pair_combo(pairs: list[dict]) -> dict:
+    """
+    NEW selector: picks the pair most likely to drive "Trending".
+    Trending is often NOT the highest-liquidity pool; it's the highest momentum + participation pool.
+    """
+    if not pairs:
+        return {}
+
+    def s(p: dict) -> float:
+        liq = _safe_float((p.get("liquidity") or {}).get("usd"), 0.0)
+        vol = p.get("volume") or {}
+        v1 = _safe_float(vol.get("h1"), 0.0)
+
+        pc = p.get("priceChange") or {}
+        ch5 = _safe_float(pc.get("m5"), 0.0)
+        ch1 = _safe_float(pc.get("h1"), 0.0)
+
+        # Momentum first, then participation, then a small liquidity safety bias
+        score = (
+            ch5 * 1.45 +
+            ch1 * 0.85 +
+            (liq / 20_000.0) +
+            (v1 / 50_000.0)
+        )
+
+        # Penalize tiny-liquidity pools with giant % (often bait / unstable)
+        if liq < 4_000 and (ch5 > 80 or ch1 > 200):
+            score *= 0.25
+
+        return score
+
+    return sorted(pairs, key=s, reverse=True)[0]
+
+
 def _passes_normal_gate(liq_usd: float, vol_1h: float, vol_24h: float) -> bool:
     return (liq_usd >= MIN_LIQ_USD) and (vol_1h >= MIN_VOL_1H or vol_24h >= MIN_VOL_24H)
 
 
-def _passes_moonshot_gate(liq_usd: float, vol_1h: float, ch_m5: float, ch_1h: float) -> bool:
+def _passes_moonshot_gate(liq_usd: float, vol_1h: float, vol_24h: float, ch_m5: float, ch_1h: float) -> bool:
     """
     Moonshot exception:
     - allow lower liquidity, BUT require:
-      - some real volume
+      - some real volume (1h OR 24h fallback)
       - extreme short-term move
     This catches early ignition before liquidity scales.
     """
@@ -143,8 +164,11 @@ def _passes_moonshot_gate(liq_usd: float, vol_1h: float, ch_m5: float, ch_1h: fl
         return False
     if liq_usd < MOONSHOT_MIN_LIQ_USD:
         return False
-    if vol_1h < MOONSHOT_MIN_VOL_1H:
+
+    # volume requirement: accept strong 24h if 1h isn't built yet
+    if not (vol_1h >= MOONSHOT_MIN_VOL_1H or vol_24h >= MOONSHOT_MIN_VOL_24H):
         return False
+
     if (ch_m5 >= MOONSHOT_CH_M5) or (ch_1h >= MOONSHOT_CH_1H):
         return True
     return False
@@ -184,7 +208,7 @@ def analyze_pair(pair: dict) -> dict | None:
     # Gate logic:
     # 1) Normal quality gate OR 2) Moonshot exception gate
     normal_ok = _passes_normal_gate(liq_usd, vol_1h, vol_24h)
-    moonshot_ok = _passes_moonshot_gate(liq_usd, vol_1h, ch_m5, ch_1h)
+    moonshot_ok = _passes_moonshot_gate(liq_usd, vol_1h, vol_24h, ch_m5, ch_1h)
 
     if not (normal_ok or moonshot_ok):
         return None
@@ -269,9 +293,10 @@ def format_alert(token: dict) -> str:
 
 def detect_alpha_tokens() -> list[dict]:
     """
-    1) Discover candidates from Dex Radar (boosts/profiles)
-    2) Fetch best pair per token address
-    3) Apply gates + rank
+    1) Discover candidates from Dex Radar (boosts/profiles/takeovers)
+    2) Fetch pairs per token address
+    3) Select best pair by COMBO score (momentum + participation)
+    4) Apply gates + rank
     """
     candidates = get_top_candidates(limit=RADAR_LIMIT) or []
     if not candidates:
@@ -285,7 +310,8 @@ def detect_alpha_tokens() -> list[dict]:
             continue
 
         pairs = fetch_pairs_by_address(addr)
-        best = _best_pair_by_liquidity(pairs)
+        # ✅ Key fix: choose the pair driving trending, not just highest liquidity
+        best = _best_pair_combo(pairs)
         if not best:
             continue
 
@@ -311,7 +337,7 @@ def detect_alpha_tokens() -> list[dict]:
 
         found.append(token)
 
-    # Rank: emphasize short-term acceleration + liquidity + volume
+    # Rank: emphasize short-term change + liquidity + volume
     def score(t: dict) -> float:
         gate = t.get("gate", "normal")
         gate_boost = 15.0 if gate == "moonshot" else 0.0  # small boost so moonshots bubble up
