@@ -2,29 +2,18 @@
 """
 MirrorX Alpha Detector (Rocket Mode + Moonshot Exception)
 ---------------------------------------------------------
-Old behavior: scan fixed symbols like SOL/BONK/WIF...
-New behavior: dynamically discover candidates (boosts/profiles/takeovers) and scan by token address.
+Dynamically discover candidates (boosts/profiles/takeovers) and scan by token address.
 
-Goal:
-- Catch early-stage rockets (10k%+ movers) without drowning in junk.
-
-How:
-1) Discovery (Dex Radar): boosts/profiles/takeovers => candidate token addresses
-2) Fetch ALL pairs per token address
-3) Select BEST pair by "trend combo" (momentum + participation), not just highest liquidity
-4) Apply gates:
-   - Normal quality gate (liquidity + volume + movement)
-   - Moonshot exception gate (lower liquidity allowed ONLY if move is extreme + volume non-trivial)
-     + includes 24h volume fallback to catch early ignition
-5) Store snapshots (movers_store) for acceleration context
-6) Alert to Telegram + persist to alerts_store (optional)
-
-Educational tooling only. Not trade advice.
+Key improvement in this version:
+✅ Adds 429 backoff + pacing for DexScreener token-pairs fetches
+   so 15-min runs stay consistent and don't "thin out" from rate limits.
 """
 
 from __future__ import annotations
 
 import os
+import time
+import random
 import requests
 from datetime import datetime, timezone
 
@@ -36,7 +25,7 @@ from src.services.movers_store import record_snapshot, compute_acceleration
 try:
     from src.services.alerts_store import add_alert  # type: ignore
 except Exception:
-    def add_alert(_source: str, _payload: dict):  # fallback no-op
+    def add_alert(_source: str, _payload: dict):
         return
 
 
@@ -53,23 +42,30 @@ MIN_VOL_24H = float(os.getenv("ALPHA_MIN_VOL_24H", "750000"))
 
 # ----------------------------
 # Moonshot exception gates
-# (lets us catch early ignition)
 # ----------------------------
 MOONSHOT_ENABLE = os.getenv("ALPHA_MOONSHOT_ENABLE", "1") == "1"
 MOONSHOT_MIN_LIQ_USD = float(os.getenv("ALPHA_MOONSHOT_MIN_LIQ_USD", "8000"))
 MOONSHOT_MIN_VOL_1H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_1H", "25000"))
 MOONSHOT_MIN_VOL_24H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_24H", "150000"))
-MOONSHOT_CH_M5 = float(os.getenv("ALPHA_MOONSHOT_CH_M5", "80"))     # 5m change threshold
-MOONSHOT_CH_1H = float(os.getenv("ALPHA_MOONSHOT_CH_1H", "250"))    # 1h change threshold
+MOONSHOT_CH_M5 = float(os.getenv("ALPHA_MOONSHOT_CH_M5", "80"))
+MOONSHOT_CH_1H = float(os.getenv("ALPHA_MOONSHOT_CH_1H", "250"))
 
-# Movement floor (applies to both paths)
-MIN_MOVE_ANY = float(os.getenv("ALPHA_MIN_MOVE_ANY", "25"))         # must be moving at least this much in m5/h1/h24
+# Movement floor
+MIN_MOVE_ANY = float(os.getenv("ALPHA_MIN_MOVE_ANY", "25"))
 
 # Discovery scan size
 RADAR_LIMIT = int(os.getenv("ALPHA_RADAR_LIMIT", "60"))
 
 # Telegram: max alerts per run
 MAX_ALERTS = int(os.getenv("ALPHA_MAX_ALERTS", "5"))
+
+# ----------------------------
+# DexScreener safety controls
+# ----------------------------
+DEX_HTTP_TIMEOUT = int(os.getenv("DEX_HTTP_TIMEOUT", "12"))
+DEX_FETCH_PAUSE_SECONDS = float(os.getenv("ALPHA_DEX_FETCH_PAUSE_SECONDS", "0.08"))  # pause per token
+DEX_429_BACKOFF_SECONDS = float(os.getenv("ALPHA_DEX_429_BACKOFF_SECONDS", "2.25"))
+DEX_429_MAX_RETRIES = int(os.getenv("ALPHA_DEX_429_MAX_RETRIES", "2"))
 
 
 def _now_iso() -> str:
@@ -83,28 +79,51 @@ def _safe_float(x, default=0.0) -> float:
         return default
 
 
+def _sleep_jitter(base: float) -> None:
+    time.sleep(max(0.0, base + random.uniform(-0.03, 0.06)))
+
+
+def _get_json_with_backoff(url: str, params: dict | None = None, timeout: int | None = None) -> dict | None:
+    t = timeout or DEX_HTTP_TIMEOUT
+    last_err: Exception | None = None
+
+    for attempt in range(DEX_429_MAX_RETRIES + 1):
+        try:
+            r = requests.get(url, params=params or {}, timeout=t)
+            if r.status_code == 429:
+                wait = DEX_429_BACKOFF_SECONDS * (attempt + 1)
+                _sleep_jitter(wait)
+                continue
+            r.raise_for_status()
+            data = r.json()
+            return data if isinstance(data, dict) else None
+        except Exception as e:
+            last_err = e
+            _sleep_jitter(0.2)
+
+    # swallow, return None so pipeline continues
+    return None
+
+
 def fetch_pairs_by_address(token_address: str) -> list[dict]:
-    """Fetch live pair data from DexScreener for a Solana token mint/address."""
-    try:
-        r = requests.get(f"{DEX_TOKEN_PAIRS}{token_address}", timeout=12)
-        r.raise_for_status()
-        return r.json().get("pairs", []) or []
-    except Exception:
+    """Fetch live pair data from DexScreener for a Solana token mint/address (with 429 backoff)."""
+    data = _get_json_with_backoff(f"{DEX_TOKEN_PAIRS}{token_address}", timeout=DEX_HTTP_TIMEOUT)
+    if not data:
         return []
+    pairs = data.get("pairs", [])
+    return pairs if isinstance(pairs, list) else []
 
 
 def fetch_pairs_by_search(query: str) -> list[dict]:
-    """Fallback: search by symbol/pair query."""
-    try:
-        r = requests.get(DEX_SEARCH, params={"q": query}, timeout=12)
-        r.raise_for_status()
-        return r.json().get("pairs", []) or []
-    except Exception:
+    """Fallback: search by symbol/pair query (with 429 backoff)."""
+    data = _get_json_with_backoff(DEX_SEARCH, params={"q": query}, timeout=DEX_HTTP_TIMEOUT)
+    if not data:
         return []
+    pairs = data.get("pairs", [])
+    return pairs if isinstance(pairs, list) else []
 
 
 def _best_pair_by_liquidity(pairs: list[dict]) -> dict:
-    """Legacy selector: keeps the highest-liquidity pool."""
     if not pairs:
         return {}
     return sorted(
@@ -115,10 +134,7 @@ def _best_pair_by_liquidity(pairs: list[dict]) -> dict:
 
 
 def _best_pair_combo(pairs: list[dict]) -> dict:
-    """
-    NEW selector: picks the pair most likely to drive "Trending".
-    Trending is often NOT the highest-liquidity pool; it's the highest momentum + participation pool.
-    """
+    """Pick the pair most likely driving trending: momentum + participation."""
     if not pairs:
         return {}
 
@@ -131,7 +147,6 @@ def _best_pair_combo(pairs: list[dict]) -> dict:
         ch5 = _safe_float(pc.get("m5"), 0.0)
         ch1 = _safe_float(pc.get("h1"), 0.0)
 
-        # Momentum first, then participation, then a small liquidity safety bias
         score = (
             ch5 * 1.45 +
             ch1 * 0.85 +
@@ -139,7 +154,6 @@ def _best_pair_combo(pairs: list[dict]) -> dict:
             (v1 / 50_000.0)
         )
 
-        # Penalize tiny-liquidity pools with giant % (often bait / unstable)
         if liq < 4_000 and (ch5 > 80 or ch1 > 200):
             score *= 0.25
 
@@ -153,31 +167,16 @@ def _passes_normal_gate(liq_usd: float, vol_1h: float, vol_24h: float) -> bool:
 
 
 def _passes_moonshot_gate(liq_usd: float, vol_1h: float, vol_24h: float, ch_m5: float, ch_1h: float) -> bool:
-    """
-    Moonshot exception:
-    - allow lower liquidity, BUT require:
-      - some real volume (1h OR 24h fallback)
-      - extreme short-term move
-    This catches early ignition before liquidity scales.
-    """
     if not MOONSHOT_ENABLE:
         return False
     if liq_usd < MOONSHOT_MIN_LIQ_USD:
         return False
-
-    # volume requirement: accept strong 24h if 1h isn't built yet
     if not (vol_1h >= MOONSHOT_MIN_VOL_1H or vol_24h >= MOONSHOT_MIN_VOL_24H):
         return False
-
-    if (ch_m5 >= MOONSHOT_CH_M5) or (ch_1h >= MOONSHOT_CH_1H):
-        return True
-    return False
+    return (ch_m5 >= MOONSHOT_CH_M5) or (ch_1h >= MOONSHOT_CH_1H)
 
 
 def analyze_pair(pair: dict) -> dict | None:
-    """
-    Convert a Dex pair into a normalized candidate if it passes gates.
-    """
     if not isinstance(pair, dict):
         return None
 
@@ -186,7 +185,6 @@ def analyze_pair(pair: dict) -> dict | None:
 
     symbol = (base.get("symbol") or "").upper()
     address = base.get("address") or ""
-
     price_usd = _safe_float(pair.get("priceUsd"), 0.0)
 
     vol = pair.get("volume") or {}
@@ -201,12 +199,9 @@ def analyze_pair(pair: dict) -> dict | None:
     liq = pair.get("liquidity") or {}
     liq_usd = _safe_float(liq.get("usd"), 0.0)
 
-    # Must be moving (avoid dead tokens)
     if max(ch_m5, ch_1h, ch_24h) < MIN_MOVE_ANY:
         return None
 
-    # Gate logic:
-    # 1) Normal quality gate OR 2) Moonshot exception gate
     normal_ok = _passes_normal_gate(liq_usd, vol_1h, vol_24h)
     moonshot_ok = _passes_moonshot_gate(liq_usd, vol_1h, vol_24h, ch_m5, ch_1h)
 
@@ -215,7 +210,7 @@ def analyze_pair(pair: dict) -> dict | None:
 
     gate_used = "normal" if normal_ok else "moonshot"
 
-    out = {
+    return {
         "address": address,
         "symbol": symbol,
         "quote": (quote.get("symbol") or "").upper(),
@@ -232,7 +227,6 @@ def analyze_pair(pair: dict) -> dict | None:
         "chainId": pair.get("chainId"),
         "gate": gate_used,
     }
-    return out
 
 
 def generate_alpha_summary(token: dict) -> str:
@@ -274,7 +268,7 @@ def format_alert(token: dict) -> str:
 
     narrative = generate_alpha_summary(token)
 
-    message = (
+    return (
         f"<b>📊 MirrorX Rocket Alert</b>\n"
         f"Token: <b>{token.get('symbol')}</b> / {token.get('quote')}\n"
         f"Gate: <b>{token.get('gate','normal')}</b>\n"
@@ -288,16 +282,9 @@ def format_alert(token: dict) -> str:
         f"<a href='{token.get('url')}'>View on DexScreener</a>\n\n"
         f"⚠️ Educational alert only. Use strict risk controls; fast movers can reverse hard."
     )
-    return message
 
 
 def detect_alpha_tokens() -> list[dict]:
-    """
-    1) Discover candidates from Dex Radar (boosts/profiles/takeovers)
-    2) Fetch pairs per token address
-    3) Select best pair by COMBO score (momentum + participation)
-    4) Apply gates + rank
-    """
     candidates = get_top_candidates(limit=RADAR_LIMIT) or []
     if not candidates:
         return []
@@ -310,16 +297,16 @@ def detect_alpha_tokens() -> list[dict]:
             continue
 
         pairs = fetch_pairs_by_address(addr)
-        # ✅ Key fix: choose the pair driving trending, not just highest liquidity
         best = _best_pair_combo(pairs)
         if not best:
+            _sleep_jitter(DEX_FETCH_PAUSE_SECONDS)
             continue
 
         token = analyze_pair(best)
         if not token:
+            _sleep_jitter(DEX_FETCH_PAUSE_SECONDS)
             continue
 
-        # Store snapshot for acceleration tracking
         record_snapshot("alpha_detector", {
             "address": token.get("address"),
             "symbol": token.get("symbol"),
@@ -336,11 +323,11 @@ def detect_alpha_tokens() -> list[dict]:
         })
 
         found.append(token)
+        _sleep_jitter(DEX_FETCH_PAUSE_SECONDS)
 
-    # Rank: emphasize short-term change + liquidity + volume
     def score(t: dict) -> float:
         gate = t.get("gate", "normal")
-        gate_boost = 15.0 if gate == "moonshot" else 0.0  # small boost so moonshots bubble up
+        gate_boost = 15.0 if gate == "moonshot" else 0.0
         return (
             gate_boost +
             _safe_float(t.get("change_m5"), 0) * 1.35 +
@@ -354,7 +341,6 @@ def detect_alpha_tokens() -> list[dict]:
 
 
 def push_alpha_alerts():
-    """Detect and push live rocket alerts to Telegram."""
     print("[SCHEDULER] Running Rocket Alpha Detector...")
     detected = detect_alpha_tokens()
 
@@ -367,7 +353,6 @@ def push_alpha_alerts():
     for token in top:
         msg = format_alert(token)
 
-        # store in alerts store (if enabled)
         try:
             add_alert("alpha_detector", {
                 "symbol": token.get("symbol"),
