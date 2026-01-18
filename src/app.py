@@ -167,7 +167,8 @@ def test_env():
         "quicknode_http": bool(settings.QUICKNODE_HTTP),
         "quicknode_wss": bool(settings.QUICKNODE_WSS),
     }
-
+from routes.parlays import parlays_bp
+app.register_blueprint(parlays_bp)
 # ---- Serve OpenAPI Spec ----
 @app.route("/openapi.json", methods=["GET"])
 def serve_openapi():
