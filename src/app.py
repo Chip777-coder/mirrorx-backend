@@ -137,6 +137,15 @@ try:
 except Exception as e:
     push_mirrorstock_alerts = None
     print(f"[WARN] MirrorStock detector not loaded: {e}")
+    # app.py
+from flask import Flask
+from routes.parlays import parlays_bp
+
+app = Flask(__name__)
+app.register_blueprint(parlays_bp)
+
+if __name__ == "__main__":
+    app.run(debug=True)
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
