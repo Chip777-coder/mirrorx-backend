@@ -1,12 +1,11 @@
-# telegram_bot.py
 import requests
 import os
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TOKEN = os.getenv("MIRRORABETS_TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("MIRRORABETS_TELEGRAM_BOT_ID")
 
-def send_parlay_message(parlay):
-    message = "🔥 *Mirabets Daily Parlay* 🔥\n\n"
+def send_parlay_to_telegram(parlay):
+    message = "🔥 *Mirabets 10-Leg Parlay* 🔥\n\n"
 
     for leg in parlay:
         message += f"*Leg {leg['leg']}*: {leg['pick']}\n"
