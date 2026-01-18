@@ -1,0 +1,34 @@
+openapi: 3.1.0
+info:
+  title: Mirabets Parlay API
+  version: 1.0.0
+  description: API for retrieving today's educational high-confidence parlay based on sharp edge and fade logic.
+servers:
+  - url: https://yourdomain.com  # Replace with your deployed API
+paths:
+  /parlay/today:
+    get:
+      operationId: getTodayParlay
+      summary: Retrieve today's best 3-leg parlay
+      responses:
+        '200':
+          description: A high-confidence parlay object
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    leg:
+                      type: integer
+                    pick:
+                      type: string
+                    confidence:
+                      type: number
+                    rationale:
+                      type: string
+                    fade_flag:
+                      type: boolean
+                    edge_flag:
+                      type: boolean
