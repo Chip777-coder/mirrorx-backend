@@ -1,4 +1,3 @@
-# nba.py
 import requests
 import os
 
@@ -18,5 +17,4 @@ def get_nba_games(date: str):
     )
     if response.status_code == 200:
         return response.json().get("response", [])
-    else:
-        return []
+    return []
