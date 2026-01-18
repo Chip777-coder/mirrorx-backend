@@ -1,6 +1,5 @@
-# fade_logic.py
 def analyze_public_fade(game):
-    public_pct = game.get("statistics", {}).get("publicBetPct", 75)
+    public_pct = game.get("statistics", {}).get("publicBetPct", 70)
     should_fade = public_pct >= 70
     reason = f"Heavy public backing ({public_pct}%)" if should_fade else "Neutral public sentiment"
     return {
