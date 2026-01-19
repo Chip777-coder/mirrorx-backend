@@ -319,3 +319,14 @@ SOURCE_WEIGHT = {
     "boosts": 10,
     "profiles": 5
 }
+from datetime import datetime
+
+hour = datetime.utcnow().hour
+
+if 12 <= hour <= 16:
+    MIN_VOL_1H *= 0.85
+  if ch5 < 5 and vol1h > avg_vol * 2 and liq_delta > 0:
+    tag = "HIDDEN_STRENGTH"
+    _FAILURES[symbol] += 1
+if _FAILURES[symbol] > 3:
+    confidence *= 0.7
