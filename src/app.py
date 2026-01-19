@@ -52,23 +52,20 @@ def rpc_list():
 
 # ==================================================================
 # ✅ BLUEPRINT REGISTRATION
-# ------------------------------------------------------------------
-# Dual-mounting for GPT compatibility: most blueprints available under
-# both /api/... and the root path where relevant.
 # ==================================================================
 
-# Fusion: keep only /api (GPT doesn't call it directly)
+# Fusion: keep only /api
 app.register_blueprint(fusion_bp, url_prefix="/api")
 
-# Crypto: serve under both /crypto/* and /api/crypto/*
+# Crypto
 app.register_blueprint(crypto_bp, url_prefix="/crypto")
 app.register_blueprint(crypto_bp, url_prefix="/api/crypto", name="crypto_api")
 
-# Intelligence: serve under both /intel/* and /api/intel/*
+# Intelligence
 app.register_blueprint(intel_bp, url_prefix="/intel")
 app.register_blueprint(intel_bp, url_prefix="/api/intel", name="intel_api")
 
-# TwitterRapid: serve under both /twitterRapid/* and /api/twitterRapid/*
+# TwitterRapid
 app.register_blueprint(twitter_bp, url_prefix="/twitterRapid")
 app.register_blueprint(twitter_bp, url_prefix="/api/twitterRapid", name="twitterRapid_api")
 
@@ -89,67 +86,60 @@ app.register_blueprint(signal_history_bp, url_prefix="/api")
 from src.routes.signals_history import signals_history_bp
 app.register_blueprint(signals_history_bp)
 
-# ✅ Alpha Trend Engine
+# ---- Trend Engine ----
 from src.routes.signals_trends import signals_trends_bp
 app.register_blueprint(signals_trends_bp, url_prefix="/api")
 
-# ✅ DexScreener Proxy (THIS is the one you wanted)
+# ---- DexScreener Proxy ----
 from src.routes.dex_proxy import dex_proxy_bp
 app.register_blueprint(dex_proxy_bp, url_prefix="/api", name="dex_proxy_api")
 
-# ✅ Alerts API (Telegram send endpoint, recent alerts, etc.)
+# ---- Alerts API ----
 from src.routes.alerts_api import alerts_api_bp
 app.register_blueprint(alerts_api_bp, url_prefix="/api", name="alerts_api")
+
+# ---- Parlays (FIXED & SAFE) ----
+try:
+    from src.routes.parlays import parlays_bp
+    app.register_blueprint(parlays_bp)
+    app.register_blueprint(parlays_bp, url_prefix="/api", name="parlays_api")
+except Exception as e:
+    print(f"[WARN] Parlays not loaded: {e}")
 
 # ---- Conditional Blueprints ----
 try:
     from src.routes.rpc_status import rpc_status_bp
-    app.register_blueprint(rpc_status_bp, url_prefix="")
+    app.register_blueprint(rpc_status_bp)
 except Exception as e:
     print(f"[WARN] RPC Status route not loaded: {e}")
 
 if os.getenv("ENABLE_ALERT_INGEST", "0") == "1":
     try:
         from src.routes.alerts import alerts_bp
-        app.register_blueprint(alerts_bp, url_prefix="")
+        app.register_blueprint(alerts_bp)
     except Exception as e:
         print(f"[WARN] Alerts failed to import: {e}")
 
 if os.getenv("ENABLE_AGENTS", "0") == "1":
     try:
         from src.routes.agents import agents_bp
-        app.register_blueprint(agents_bp, url_prefix="")
+        app.register_blueprint(agents_bp)
     except Exception as e:
         print(f"[WARN] Agents failed to import: {e}")
 
 if os.getenv("ENABLE_SMOKE", "0") == "1":
     try:
         from src.routes.smoke import smoke_bp
-        app.register_blueprint(smoke_bp, url_prefix="")
+        app.register_blueprint(smoke_bp)
     except Exception as e:
         print(f"[WARN] Smoke failed to import: {e}")
 
 from src.routes.alerts_test import alerts_test_bp
 app.register_blueprint(alerts_test_bp)
-# ✅ MirrorStock detector (safe import)
-try:
-    from src.services.mirrorstock_detector import push_mirrorstock_alerts
-except Exception as e:
-    push_mirrorstock_alerts = None
-    print(f"[WARN] MirrorStock detector not loaded: {e}")
-    # app.py
-from flask import Flask
-from routes.parlays import parlays_bp
 
-app = Flask(__name__)
-app.register_blueprint(parlays_bp)
-
-if __name__ == "__main__":
-    app.run(debug=True)
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
-    """Check which API keys are set without exposing full values."""
     return {
         "coingecko": bool(settings.COINGECKO_API_BASE),
         "coinmarketcap": bool(settings.COINMARKETCAP_API_KEY),
@@ -162,114 +152,76 @@ def test_env():
         "solscan": bool(settings.SOLSCAN_API_KEY),
         "push": bool(settings.PUSH_API_KEY),
         "ankr": bool(settings.ANKR_API_KEY),
-        "sentiment": bool(getattr(settings, "SENTIMENT_API_KEY", "")),
-        "shyft": bool(getattr(settings, "SHYFT_API_KEY", "")),
         "quicknode_http": bool(settings.QUICKNODE_HTTP),
         "quicknode_wss": bool(settings.QUICKNODE_WSS),
     }
-from routes.parlays import parlays_bp
-app.register_blueprint(parlays_bp)
-# ---- Serve OpenAPI Spec ----
-@app.route("/openapi.json", methods=["GET"])
+
+# ---- OpenAPI ----
+@app.route("/openapi.json")
 def serve_openapi():
-    """Serve OpenAPI schema for GPT Actions"""
-    base_dir = os.path.dirname(os.path.dirname(__file__))  # one level up from /src
+    base_dir = os.path.dirname(os.path.dirname(__file__))
     file_path = os.path.join(base_dir, "openapi.json")
     if os.path.exists(file_path):
         return send_from_directory(base_dir, "openapi.json")
     return jsonify({"error": "openapi.json not found"}), 404
 
-
-# ---- Fusion Dashboard UI ----
-@app.route("/fusion-dashboard", methods=["GET"])
+# ---- Fusion Dashboard ----
+@app.route("/fusion-dashboard")
 def serve_fusion_dashboard():
-    """Serve the real-time Fusion Intelligence dashboard"""
     return send_from_directory(
         os.path.join(os.path.dirname(__file__), "analytics/ui"),
         "fusion_dashboard.html"
     )
 
-# ---- Automated Trend Scheduler ----
+# ---- Scheduler ----
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import threading
 import requests
-# ✅ Birdeye WS ignition (optional)
+
 if os.getenv("ENABLE_BIRDEYE_WS", "0") == "1":
     try:
         from src.services.birdeye_ws import start_birdeye_ws_thread
         start_birdeye_ws_thread()
     except Exception as e:
         print(f"[WARN] Birdeye WS not started: {e}")
-else:
-    print("⚠️ Birdeye WS disabled (set ENABLE_BIRDEYE_WS=1 to enable).")
-# ✅ Import Alpha Detectors
+
 from src.services.alpha_detector import push_alpha_alerts
 
-# Alpha fusion may fail if it still imports old alpha_detector functions
-# Keep it optional so deploy doesn't die
 try:
     from src.services.alpha_fusion import push_fused_alpha_alerts
-except Exception as e:
+except Exception:
     push_fused_alpha_alerts = None
-    print(f"[WARN] Alpha Fusion not loaded: {e}")
 
-# ✅ MirrorStock detector (safe import)
 try:
     from src.services.mirrorstock_detector import push_mirrorstock_alerts
-except Exception as e:
+except Exception:
     push_mirrorstock_alerts = None
-    print(f"[WARN] MirrorStock detector not loaded: {e}")
 
 
 def trigger_trends_job():
-    """MirrorX unified job runner (runs every 3 hours)."""
-    try:
-        print(f"[SCHEDULER] Triggering MirrorX cycle at {datetime.utcnow().isoformat()}Z")
-
-        # 1️⃣ Run Dex-only Alpha Detector
-        print("[SCHEDULER] → Running Alpha Detector (DEX layer)…")
-        push_alpha_alerts()
-
-        # 2️⃣ Run Dex + Fusion Alpha Detector (optional)
-        if push_fused_alpha_alerts:
-            print("[SCHEDULER] → Running Alpha Fusion (DEX + Fusion layer)…")
-            push_fused_alpha_alerts()
-        else:
-            print("[SCHEDULER] → Alpha Fusion skipped (not loaded).")
-
-        # 3️⃣ Trigger trend engine endpoint
-        res = requests.get("https://mirrorx-backend.onrender.com/api/signals/trends", timeout=20)
-        print(f"[SCHEDULER] Trend job response: {res.status_code}")
-
-        print("✅ MirrorX job cycle complete.\n")
-    except Exception as e:
-        print(f"[SCHEDULER] MirrorX unified job failed: {e}")
+    print(f"[SCHEDULER] Triggering MirrorX cycle at {datetime.utcnow().isoformat()}Z")
+    push_alpha_alerts()
+    if push_fused_alpha_alerts:
+        push_fused_alpha_alerts()
+    requests.get("https://mirrorx-backend.onrender.com/api/signals/trends", timeout=20)
+    print("✅ MirrorX job cycle complete.\n")
 
 
 def start_scheduler():
-    """Start schedulers in a background thread."""
     scheduler = BackgroundScheduler(daemon=True)
-
-    # MirrorX: every 3 hours
     scheduler.add_job(trigger_trends_job, "interval", hours=3, next_run_time=datetime.utcnow())
 
-    # MirrorStock: every 1 hour (runs separately)
     if push_mirrorstock_alerts:
         scheduler.add_job(push_mirrorstock_alerts, "interval", hours=1, next_run_time=datetime.utcnow())
-        print("✅ MirrorStock Scheduler initialized (runs every 1 hour).")
-    else:
-        print("⚠️ MirrorStock Scheduler not enabled (detector not loaded).")
+        print("✅ MirrorStock Scheduler initialized.")
 
     scheduler.start()
     print("✅ Scheduler initialized.")
 
 
-# Run the scheduler after app creation (only if enabled)
 if os.getenv("ENABLE_SCHEDULER", "0") == "1":
     threading.Thread(target=start_scheduler, daemon=True).start()
-else:
-    print("⚠️ Scheduler disabled (set ENABLE_SCHEDULER=1 to enable).")
 
 # ---- Run Server ----
 if __name__ == "__main__":
