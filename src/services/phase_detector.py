@@ -6,3 +6,8 @@ def detect_phase(ch5, ch15, ch60):
     if ch60 >= 250:
         return "EUPHORIA"
     return "BUILDING"
+liq_delta = current_liq - prev_liq
+if liq_delta > 0:
+    flow = "INFLOW"
+else:
+    flow = "OUTFLOW"
