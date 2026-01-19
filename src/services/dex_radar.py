@@ -314,3 +314,8 @@ def get_top_candidates(limit: int = 60) -> list[dict]:
     _cached_payload = ranked
     _cached_at = now
     return ranked
+SOURCE_WEIGHT = {
+    "takeover": 15,
+    "boosts": 10,
+    "profiles": 5
+}
