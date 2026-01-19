@@ -136,7 +136,14 @@ if os.getenv("ENABLE_SMOKE", "0") == "1":
 
 from src.routes.alerts_test import alerts_test_bp
 app.register_blueprint(alerts_test_bp)
+@app.route("/test/telegram")
+def test_bot():
+    from analytics.mirrax.parlay_builder import generate_multiple_parlays
+    from bots.telegram_bot import send_parlay_to_telegram
 
+    parlay = generate_multiple_parlays()[0]
+    send_parlay_to_telegram(parlay)
+    return "Sent"
 # ---- ENV Diagnostic ----
 @app.route("/test-env")
 def test_env():
