@@ -319,17 +319,30 @@ SOURCE_WEIGHT = {
     "boosts": 10,
     "profiles": 5
 }
-from datetime import datetime
+# -----------------------------------------------------
+# Future-safe helper (NOT wired into logic yet)
+# -----------------------------------------------------
+def detect_hidden_strength(pair: dict) -> bool:
+    """
+    Placeholder for future hidden-strength detection.
+    Currently unused. Safe to keep.
+    """
+    try:
+        pc = pair.get("priceChange") or {}
+        vol = pair.get("volume") or {}
+        liq = pair.get("liquidity") or {}
 
-hour = datetime.utcnow().hour
+        ch5 = float(pc.get("m5", 0))
+        vol1h = float(vol.get("h1", 0))
+        liq_usd = float(liq.get("usd", 0))
 
-if 12 <= hour <= 16:
-    MIN_VOL_1H *= 0.85
-  if ch5 < 5 and vol1h > avg_vol * 2 and liq_delta > 0:
-    tag = "HIDDEN_STRENGTH"
-    _FAILURES[symbol] += 1
-if _FAILURES[symbol] > 3:
-    confidence *= 0.7
+        return (
+            ch5 < 5 and
+            vol1h > 100_000 and
+            liq_usd > 20_000
+        )
+    except Exception:
+        return False
 # src/services/dex_radar.py
 # (FILE HEADER UNCHANGED — OMITTED FOR BREVITY)
 
