@@ -3,10 +3,6 @@
 Movers Store (Snapshot History)
 -------------------------------
 Stores small rolling snapshots so we can detect acceleration.
-This helps identify early stages of large moves.
-
-Best effort storage (JSON on disk). On Render free tiers,
-disk may reset on redeploys, but this works well between scheduler runs.
 """
 
 from __future__ import annotations
@@ -22,7 +18,6 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "movers"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 HISTORY_FILE = DATA_DIR / "movers_history.json"
-
 MAX_RECORDS = int(os.getenv("MOVERS_MAX_RECORDS", "2000"))
 
 
@@ -68,18 +63,12 @@ def record_snapshot(source: str, item: dict) -> None:
         _save(data)
 
 
-def get_recent(limit: int = 200) -> list[dict]:
-    with _LOCK:
-        data = _load()
-        return data.get("records", [])[: max(1, int(limit))]
-
-
 def get_recent_by_address(address: str, limit: int = 50) -> list[dict]:
     if not address:
         return []
     address = address.strip()
     out = []
-    for r in get_recent(limit=2000):
+    for r in _load().get("records", []):
         d = (r.get("data") or {})
         if (d.get("address") or "").strip() == address:
             out.append(r)
@@ -89,41 +78,15 @@ def get_recent_by_address(address: str, limit: int = 50) -> list[dict]:
 
 
 def compute_acceleration(address: str) -> dict:
-    """
-    Compute acceleration from recent snapshots.
-
-    Returns:
-      samples
-      accel_hint
-      accel_5m / accel_1h when available
-    """
     rows = get_recent_by_address(address, limit=10)
 
-    # --- No history at all ---
-    if not rows:
-        return {"samples": 0, "accel_hint": "insufficient_history"}
-
-    # --- Single snapshot fallback (STRUCTURAL MOMENTUM) ---
-    if len(rows) == 1:
-        d = rows[0].get("data", {}) or {}
-        ch5 = float(d.get("changeM5", 0) or 0)
-        ch1 = float(d.get("changeH1", 0) or 0)
-
-        if ch5 >= 15:
-            hint = "short_term_spike"
-        elif ch5 >= 8 and ch1 > 0:
-            hint = "momentum_building"
-        else:
-            hint = "building"
-
+    # 🔧 MINIMAL EDIT: require 3 samples instead of 2
+    if len(rows) < 3:
         return {
-            "samples": 1,
-            "change_m5_latest": round(ch5, 3),
-            "change_h1_latest": round(ch1, 3),
-            "accel_hint": hint,
+            "samples": len(rows),
+            "accel_hint": "building"
         }
 
-    # --- 2+ snapshots: TRUE acceleration ---
     latest = rows[0].get("data", {}) or {}
     older = rows[-1].get("data", {}) or {}
 
@@ -140,8 +103,6 @@ def compute_acceleration(address: str) -> dict:
         hint = "accelerating"
     elif accel_5m < -8 or accel_1h < -20:
         hint = "decelerating"
-    elif accel_5m > 0:
-        hint = "early_acceleration"
 
     return {
         "samples": len(rows),
