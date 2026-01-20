@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from src.services.telegram_alerts import send_telegram_message
 from src.services.dex_radar import get_top_candidates
 from src.services.movers_store import record_snapshot, compute_acceleration
-
+from src.services.alerts_store import can_alert
 # Optional alert store (safe if file doesn't exist)
 try:
     from src.services.alerts_store import add_alert  # type: ignore
@@ -148,6 +148,21 @@ def detect_alpha_tokens() -> list[dict]:
             })
         except Exception:
             pass
+           # 🔧 ALWAYS RECORD SNAPSHOT (even if not alerted)
+        record_snapshot("alpha_detector", {
+            "address": token.get("address"),
+            "symbol": token.get("symbol"),
+            "priceUsd": token.get("price"),
+            "liquidityUsd": token.get("liquidity"),
+            "volumeH1": token.get("volume_1h"),
+            "volumeH24": token.get("volume_24h"),
+            "changeM5": token.get("change_m5"),
+            "changeH1": token.get("change_1h"),
+            "changeH24": token.get("change_24h"),
+            "url": token.get("url"),
+            "gate": token.get("gate"),
+            "ts": _now_iso(),
+        })
         # =====================================================
 
         token = analyze_pair(best)
@@ -195,6 +210,9 @@ def push_alpha_alerts():
         send_telegram_message(msg)
         print(f"[AlphaDetector] Sent rocket alert for {token['symbol']} ({accel})")
 
+strength = abs(token.get("change_1h", 0)) + abs(token.get("change_m5", 0))
 
+        if not can_alert(token.get("address"), strength):
+            continue
 if __name__ == "__main__":
     push_alpha_alerts()
