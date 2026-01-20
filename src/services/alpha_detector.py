@@ -21,6 +21,9 @@ except Exception:
 DEX_BASE = "https://api.dexscreener.com"
 DEX_TOKEN_PAIRS = f"{DEX_BASE}/latest/dex/tokens/"
 
+# ----------------------------
+# Gates (UNCHANGED)
+# ----------------------------
 MIN_LIQ_USD = float(os.getenv("ALPHA_MIN_LIQ_USD", "30000"))
 MIN_VOL_1H = float(os.getenv("ALPHA_MIN_VOL_1H", "150000"))
 MIN_VOL_24H = float(os.getenv("ALPHA_MIN_VOL_24H", "750000"))
@@ -95,42 +98,47 @@ def _best_pair_combo(pairs: list[dict]) -> dict:
 
 def detect_alpha_tokens() -> list[dict]:
     candidates = get_top_candidates(limit=RADAR_LIMIT) or []
-    found = []
+    found: list[dict] = []
 
     for c in candidates:
         addr = c.get("address")
         if not addr:
             continue
-# --- PRE-GATE SNAPSHOT (for acceleration history only) ---
-try:
-    base = best.get("baseToken") or {}
-    record_snapshot("alpha_pre_gate", {
-        "address": base.get("address"),
-        "symbol": base.get("symbol"),
-        "priceUsd": _safe_float(best.get("priceUsd")),
-        "liquidityUsd": _safe_float((best.get("liquidity") or {}).get("usd")),
-        "volumeH1": _safe_float((best.get("volume") or {}).get("h1")),
-        "volumeH24": _safe_float((best.get("volume") or {}).get("h24")),
-        "changeM5": _safe_float((best.get("priceChange") or {}).get("m5")),
-        "changeH1": _safe_float((best.get("priceChange") or {}).get("h1")),
-        "changeH24": _safe_float((best.get("priceChange") or {}).get("h24")),
-        "url": best.get("url"),
-        "ts": _now_iso(),
-        "stage": "pre_gate",
-    })
-except Exception:
-    pass
-# --------------------------------------------------------
+
         pairs = fetch_pairs_by_address(addr)
         best = _best_pair_combo(pairs)
         if not best:
             continue
 
+        # =====================================================
+        # ✅ SMALL, SAFE ADDITION: PRE-GATE SNAPSHOT
+        # (builds acceleration history, no logic change)
+        # =====================================================
+        try:
+            base = best.get("baseToken") or {}
+            record_snapshot("alpha_pre_gate", {
+                "address": base.get("address"),
+                "symbol": base.get("symbol"),
+                "priceUsd": _safe_float(best.get("priceUsd")),
+                "liquidityUsd": _safe_float((best.get("liquidity") or {}).get("usd")),
+                "volumeH1": _safe_float((best.get("volume") or {}).get("h1")),
+                "volumeH24": _safe_float((best.get("volume") or {}).get("h24")),
+                "changeM5": _safe_float((best.get("priceChange") or {}).get("m5")),
+                "changeH1": _safe_float((best.get("priceChange") or {}).get("h1")),
+                "changeH24": _safe_float((best.get("priceChange") or {}).get("h24")),
+                "url": best.get("url"),
+                "ts": _now_iso(),
+                "stage": "pre_gate",
+            })
+        except Exception:
+            pass
+        # =====================================================
+
         token = analyze_pair(best)
         if not token:
             continue
 
-        # ✅ Always record snapshot (builds acceleration history)
+        # Always record gated snapshot
         record_snapshot("alpha_detector", {
             "address": token["address"],
             "symbol": token["symbol"],
@@ -158,12 +166,19 @@ def push_alpha_alerts():
         return
 
     for token in detected[:MAX_ALERTS]:
+        strength = _safe_float(token.get("change_1h"), 0)
 
+        if not can_alert(token.get("address"), strength):
+            continue
 
         msg = format_alert(token)
 
         try:
-            add_alert("alpha_detector", {"address": token["address"], "message": msg})
+            add_alert("alpha_detector", {
+                "address": token["address"],
+                "symbol": token["symbol"],
+                "message": msg,
+            })
         except Exception:
             pass
 
