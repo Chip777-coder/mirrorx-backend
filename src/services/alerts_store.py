@@ -1,93 +1,95 @@
 # src/services/alerts_store.py
-"""
-Simple alert store (JSON file) so the backend + GPT can read recent alerts.
-
-- add_alert(source, data)
-- get_recent_alerts(limit=50, source=None)
-- clear_alerts()
-"""
-
-from __future__ import annotations
-
 import json
 import os
 import time
-import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from threading import Lock
 
-# Store in: src/data/alerts/alerts.json
-BASE_DIR = Path(__file__).resolve().parent.parent  # .../src
-ALERTS_DIR = BASE_DIR / "data" / "alerts"
-ALERTS_FILE = ALERTS_DIR / "alerts.json"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_MAX_RECORDS = int(os.getenv("ALERTS_MAX_RECORDS", "500"))
+FILE = DATA_DIR / "alerts_store.json"
+_LOCK = Lock()
 
-
-def _ensure_store():
-    ALERTS_DIR.mkdir(parents=True, exist_ok=True)
-    if not ALERTS_FILE.exists():
-        ALERTS_FILE.write_text(json.dumps({"records": []}, indent=2))
+COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "2700"))  # 45 min
 
 
-def _read_store() -> Dict[str, Any]:
-    _ensure_store()
+def _load():
+    if not FILE.exists():
+        return {}
     try:
-        with open(ALERTS_FILE, "r") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            return {"records": []}
-        if "records" not in data or not isinstance(data["records"], list):
-            return {"records": []}
-        return data
+        return json.loads(FILE.read_text())
     except Exception:
-        return {"records": []}
+        return {}
 
 
-def _write_store(data: Dict[str, Any]) -> None:
-    _ensure_store()
-    tmp = str(ALERTS_FILE) + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, ALERTS_FILE)
+def _save(data):
+    FILE.write_text(json.dumps(data))
 
 
-def add_alert(source: str, payload: Dict[str, Any], max_records: Optional[int] = None) -> Dict[str, Any]:
-    """Append an alert record. Best-effort file persistence."""
-    max_records = max_records or DEFAULT_MAX_RECORDS
+def can_alert(key: str, strength: float = 0) -> bool:
+    now = time.time()
+    with _LOCK:
+        data = _load()
+        prev = data.get(key)
 
-    store = _read_store()
-    records: List[Dict[str, Any]] = store.get("records", [])
+        if prev:
+            elapsed = now - prev["ts"]
+            # allow escalation
+            if elapsed < COOLDOWN_SECONDS and strength <= prev.get("strength", 0):
+                return False
 
-    record = {
-        "id": uuid.uuid4().hex[:12],
-        "timestamp": payload.get("timestamp") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "source": source,
-        "data": payload,
-    }
-
-    records.insert(0, record)  # newest first
-    if len(records) > max_records:
-        records = records[:max_records]
-
-    store["records"] = records
-    _write_store(store)
-    return record
+        data[key] = {"ts": now, "strength": strength}
+        _save(data)
+        return True
 
 
-def get_recent_alerts(limit: int = 50, source: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Return recent alerts (newest first)."""
-    store = _read_store()
-    records: List[Dict[str, Any]] = store.get("records", [])
+def add_alert(source: str, payload: dict):
+    return# src/services/alerts_store.py
+import json
+import os
+import time
+from pathlib import Path
+from threading import Lock
 
-    if source:
-        source_u = source.strip().lower()
-        records = [r for r in records if (r.get("source", "") or "").lower() == source_u]
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    limit = max(1, min(int(limit), 200))
-    return records[:limit]
+FILE = DATA_DIR / "alerts_store.json"
+_LOCK = Lock()
+
+COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "2700"))  # 45 min
 
 
-def clear_alerts() -> None:
-    """Clear store (use carefully)."""
-    _write_store({"records": []})
+def _load():
+    if not FILE.exists():
+        return {}
+    try:
+        return json.loads(FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _save(data):
+    FILE.write_text(json.dumps(data))
+
+
+def can_alert(key: str, strength: float = 0) -> bool:
+    now = time.time()
+    with _LOCK:
+        data = _load()
+        prev = data.get(key)
+
+        if prev:
+            elapsed = now - prev["ts"]
+            # allow escalation
+            if elapsed < COOLDOWN_SECONDS and strength <= prev.get("strength", 0):
+                return False
+
+        data[key] = {"ts": now, "strength": strength}
+        _save(data)
+        return True
+
+
+def add_alert(source: str, payload: dict):
+    return
