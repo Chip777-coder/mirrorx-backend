@@ -1,14 +1,4 @@
 # src/services/alpha_detector.py
-"""
-MirrorX Alpha Detector (Rocket Mode + Moonshot Exception)
----------------------------------------------------------
-Dynamically discover candidates (boosts/profiles/takeovers) and scan by token address.
-
-Key improvement in this version:
-✅ Adds 429 backoff + pacing for DexScreener token-pairs fetches
-   so 15-min runs stay consistent and don't "thin out" from rate limits.
-"""
-
 from __future__ import annotations
 
 import os
@@ -21,28 +11,20 @@ from src.services.telegram_alerts import send_telegram_message
 from src.services.dex_radar import get_top_candidates
 from src.services.movers_store import record_snapshot, compute_acceleration
 from src.services.alerts_store import can_alert
-# Optional alert store (safe if file doesn't exist)
+
 try:
-    from src.services.alerts_store import add_alert  # type: ignore
+    from src.services.alerts_store import add_alert
 except Exception:
     def add_alert(_source: str, _payload: dict):
         return
 
-
 DEX_BASE = "https://api.dexscreener.com"
 DEX_TOKEN_PAIRS = f"{DEX_BASE}/latest/dex/tokens/"
-DEX_SEARCH = f"{DEX_BASE}/latest/dex/search"
 
-# ----------------------------
-# Normal safety gates
-# ----------------------------
 MIN_LIQ_USD = float(os.getenv("ALPHA_MIN_LIQ_USD", "30000"))
 MIN_VOL_1H = float(os.getenv("ALPHA_MIN_VOL_1H", "150000"))
 MIN_VOL_24H = float(os.getenv("ALPHA_MIN_VOL_24H", "750000"))
 
-# ----------------------------
-# Moonshot exception gates
-# ----------------------------
 MOONSHOT_ENABLE = os.getenv("ALPHA_MOONSHOT_ENABLE", "1") == "1"
 MOONSHOT_MIN_LIQ_USD = float(os.getenv("ALPHA_MOONSHOT_MIN_LIQ_USD", "8000"))
 MOONSHOT_MIN_VOL_1H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_1H", "25000"))
@@ -75,11 +57,10 @@ def _sleep_jitter(base: float) -> None:
     time.sleep(max(0.0, base + random.uniform(-0.03, 0.06)))
 
 
-def _get_json_with_backoff(url: str, params=None, timeout=None):
-    t = timeout or DEX_HTTP_TIMEOUT
+def _get_json_with_backoff(url: str):
     for attempt in range(DEX_429_MAX_RETRIES + 1):
         try:
-            r = requests.get(url, params=params or {}, timeout=t)
+            r = requests.get(url, timeout=DEX_HTTP_TIMEOUT)
             if r.status_code == 429:
                 _sleep_jitter(DEX_429_BACKOFF_SECONDS * (attempt + 1))
                 continue
@@ -120,56 +101,36 @@ def detect_alpha_tokens() -> list[dict]:
         addr = c.get("address")
         if not addr:
             continue
-
+# --- PRE-GATE SNAPSHOT (for acceleration history only) ---
+try:
+    base = best.get("baseToken") or {}
+    record_snapshot("alpha_pre_gate", {
+        "address": base.get("address"),
+        "symbol": base.get("symbol"),
+        "priceUsd": _safe_float(best.get("priceUsd")),
+        "liquidityUsd": _safe_float((best.get("liquidity") or {}).get("usd")),
+        "volumeH1": _safe_float((best.get("volume") or {}).get("h1")),
+        "volumeH24": _safe_float((best.get("volume") or {}).get("h24")),
+        "changeM5": _safe_float((best.get("priceChange") or {}).get("m5")),
+        "changeH1": _safe_float((best.get("priceChange") or {}).get("h1")),
+        "changeH24": _safe_float((best.get("priceChange") or {}).get("h24")),
+        "url": best.get("url"),
+        "ts": _now_iso(),
+        "stage": "pre_gate",
+    })
+except Exception:
+    pass
+# --------------------------------------------------------
         pairs = fetch_pairs_by_address(addr)
         best = _best_pair_combo(pairs)
         if not best:
-            _sleep_jitter(DEX_FETCH_PAUSE_SECONDS)
             continue
-
-        # =====================================================
-        # ✅ SMALL INCISION: PRE-GATE SNAPSHOT (ACCEL HISTORY)
-        # =====================================================
-        try:
-            base = best.get("baseToken") or {}
-            record_snapshot("alpha_pre_gate", {
-                "address": base.get("address"),
-                "symbol": base.get("symbol"),
-                "priceUsd": _safe_float(best.get("priceUsd")),
-                "liquidityUsd": _safe_float((best.get("liquidity") or {}).get("usd")),
-                "volumeH1": _safe_float((best.get("volume") or {}).get("h1")),
-                "volumeH24": _safe_float((best.get("volume") or {}).get("h24")),
-                "changeM5": _safe_float((best.get("priceChange") or {}).get("m5")),
-                "changeH1": _safe_float((best.get("priceChange") or {}).get("h1")),
-                "changeH24": _safe_float((best.get("priceChange") or {}).get("h24")),
-                "url": best.get("url"),
-                "ts": _now_iso(),
-                "stage": "pre_gate",
-            })
-        except Exception:
-            pass
-           # 🔧 ALWAYS RECORD SNAPSHOT (even if not alerted)
-        record_snapshot("alpha_detector", {
-            "address": token.get("address"),
-            "symbol": token.get("symbol"),
-            "priceUsd": token.get("price"),
-            "liquidityUsd": token.get("liquidity"),
-            "volumeH1": token.get("volume_1h"),
-            "volumeH24": token.get("volume_24h"),
-            "changeM5": token.get("change_m5"),
-            "changeH1": token.get("change_1h"),
-            "changeH24": token.get("change_24h"),
-            "url": token.get("url"),
-            "gate": token.get("gate"),
-            "ts": _now_iso(),
-        })
-        # =====================================================
 
         token = analyze_pair(best)
         if not token:
-            _sleep_jitter(DEX_FETCH_PAUSE_SECONDS)
             continue
 
+        # ✅ Always record snapshot (builds acceleration history)
         record_snapshot("alpha_detector", {
             "address": token["address"],
             "symbol": token["symbol"],
@@ -188,57 +149,26 @@ def detect_alpha_tokens() -> list[dict]:
         found.append(token)
         _sleep_jitter(DEX_FETCH_PAUSE_SECONDS)
 
-    found.sort(
-        key=lambda t: (
-            (15 if t["gate"] == "moonshot" else 0)
-            + t["change_m5"] * 1.35
-            + t["change_1h"] * 0.9
-            + t["volume_1h"] / 250000
-            + t["liquidity"] / 150000
-        ),
-        reverse=True,
-    )
-    return found
+    return sorted(found, key=lambda t: t["change_1h"], reverse=True)
 
 
 def push_alpha_alerts():
-    print("[SCHEDULER] Running Rocket Alpha Detector...")
     detected = detect_alpha_tokens()
-
     if not detected:
-        print("[AlphaDetector] No standout rocket signals.")
         return
 
-    top = detected[:MAX_ALERTS]
+    for token in detected[:MAX_ALERTS]:
 
-    for token in top:
-        strength = _safe_float(token.get("change_1h"), 0)
-
-        if not can_alert(token.get("address"), strength):
-            continue
 
         msg = format_alert(token)
 
         try:
-            add_alert("alpha_detector", {
-                "symbol": token.get("symbol"),
-                "address": token.get("address"),
-                "url": token.get("url"),
-                "gate": token.get("gate"),
-                "message": msg,
-            })
+            add_alert("alpha_detector", {"address": token["address"], "message": msg})
         except Exception:
             pass
 
         send_telegram_message(msg)
-        print(
-            f"[AlphaDetector] Sent rocket alert for "
-            f"{token.get('symbol')} ({token.get('address')})"
-        )
 
-strength = abs(token.get("change_1h", 0)) + abs(token.get("change_m5", 0))
 
-        if not can_alert(token.get("address"), strength):
-            continue
 if __name__ == "__main__":
     push_alpha_alerts()
