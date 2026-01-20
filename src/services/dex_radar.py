@@ -330,3 +330,24 @@ if 12 <= hour <= 16:
     _FAILURES[symbol] += 1
 if _FAILURES[symbol] > 3:
     confidence *= 0.7
+# src/services/dex_radar.py
+# (FILE HEADER UNCHANGED — OMITTED FOR BREVITY)
+
+# 🔧 ADD THIS HELPER NEAR THE BOTTOM (SAFE)
+def detect_hidden_strength(pair: dict) -> bool:
+    try:
+        pc = pair.get("priceChange") or {}
+        vol = pair.get("volume") or {}
+        liq = pair.get("liquidity") or {}
+
+        ch5 = float(pc.get("m5", 0))
+        vol1h = float(vol.get("h1", 0))
+        liq_usd = float(liq.get("usd", 0))
+
+        return (
+            ch5 < 5 and
+            vol1h > 100_000 and
+            liq_usd > 20_000
+        )
+    except Exception:
+        return False
