@@ -204,11 +204,37 @@ def detect_alpha_tokens() -> list[dict]:
 def push_alpha_alerts():
     print("[SCHEDULER] Running Rocket Alpha Detector...")
     detected = detect_alpha_tokens()
-    for token in detected[:MAX_ALERTS]:
-        accel = compute_acceleration(token["address"]).get("accel_hint", "n/a")
+
+    if not detected:
+        print("[AlphaDetector] No standout rocket signals.")
+        return
+
+    top = detected[:MAX_ALERTS]
+
+    for token in top:
+        strength = _safe_float(token.get("change_1h"), 0)
+
+        if not can_alert(token.get("address"), strength):
+            continue
+
         msg = format_alert(token)
+
+        try:
+            add_alert("alpha_detector", {
+                "symbol": token.get("symbol"),
+                "address": token.get("address"),
+                "url": token.get("url"),
+                "gate": token.get("gate"),
+                "message": msg,
+            })
+        except Exception:
+            pass
+
         send_telegram_message(msg)
-        print(f"[AlphaDetector] Sent rocket alert for {token['symbol']} ({accel})")
+        print(
+            f"[AlphaDetector] Sent rocket alert for "
+            f"{token.get('symbol')} ({token.get('address')})"
+        )
 
 strength = abs(token.get("change_1h", 0)) + abs(token.get("change_m5", 0))
 
