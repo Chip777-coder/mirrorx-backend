@@ -314,11 +314,15 @@ def get_top_candidates(limit: int = 60) -> list[dict]:
     _cached_payload = ranked
     _cached_at = now
     return ranked
+  # -----------------------------------------------------
+# Source weighting (reserved for future ranking logic)
+# -----------------------------------------------------
 SOURCE_WEIGHT = {
     "takeover": 15,
     "boosts": 10,
-    "profiles": 5
+    "profiles": 5,
 }
+
 # -----------------------------------------------------
 # Future-safe helper (NOT wired into logic yet)
 # -----------------------------------------------------
@@ -327,27 +331,6 @@ def detect_hidden_strength(pair: dict) -> bool:
     Placeholder for future hidden-strength detection.
     Currently unused. Safe to keep.
     """
-    try:
-        pc = pair.get("priceChange") or {}
-        vol = pair.get("volume") or {}
-        liq = pair.get("liquidity") or {}
-
-        ch5 = float(pc.get("m5", 0))
-        vol1h = float(vol.get("h1", 0))
-        liq_usd = float(liq.get("usd", 0))
-
-        return (
-            ch5 < 5 and
-            vol1h > 100_000 and
-            liq_usd > 20_000
-        )
-    except Exception:
-        return False
-# src/services/dex_radar.py
-# (FILE HEADER UNCHANGED — OMITTED FOR BREVITY)
-
-# 🔧 ADD THIS HELPER NEAR THE BOTTOM (SAFE)
-def detect_hidden_strength(pair: dict) -> bool:
     try:
         pc = pair.get("priceChange") or {}
         vol = pair.get("volume") or {}
