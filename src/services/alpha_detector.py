@@ -95,7 +95,62 @@ def _best_pair_combo(pairs: list[dict]) -> dict:
 
     return sorted(pairs, key=score, reverse=True)[0]
 
+# -------------------------------------------------
+# Alpha Analysis + Alert Formatting (SAFE DEFAULTS)
+# -------------------------------------------------
 
+def analyze_pair(pair: dict) -> dict | None:
+    try:
+        base = pair.get("baseToken") or {}
+
+        liquidity = _safe_float((pair.get("liquidity") or {}).get("usd"))
+        vol_1h = _safe_float((pair.get("volume") or {}).get("h1"))
+        vol_24h = _safe_float((pair.get("volume") or {}).get("h24"))
+
+        ch_m5 = _safe_float((pair.get("priceChange") or {}).get("m5"))
+        ch_1h = _safe_float((pair.get("priceChange") or {}).get("h1"))
+        ch_24h = _safe_float((pair.get("priceChange") or {}).get("h24"))
+
+        # -------------------------
+        # HARD GATES
+        # -------------------------
+        if liquidity < MIN_LIQ_USD:
+            return None
+
+        if vol_1h < MIN_VOL_1H or vol_24h < MIN_VOL_24H:
+            return None
+
+        # -------------------------
+        # MOONSHOT OVERRIDE
+        # -------------------------
+        moonshot = (
+            MOONSHOT_ENABLE
+            and liquidity >= MOONSHOT_MIN_LIQ_USD
+            and vol_1h >= MOONSHOT_MIN_VOL_1H
+            and vol_24h >= MOONSHOT_MIN_VOL_24H
+            and (ch_m5 >= MOONSHOT_CH_M5 or ch_1h >= MOONSHOT_CH_1H)
+        )
+
+        if not moonshot and max(ch_m5, ch_1h, ch_24h) < MIN_MOVE_ANY:
+            return None
+
+        return {
+            "address": base.get("address"),
+            "symbol": base.get("symbol", "UNKNOWN"),
+            "price": _safe_float(pair.get("priceUsd")),
+            "liquidity": liquidity,
+            "volume_1h": vol_1h,
+            "volume_24h": vol_24h,
+            "change_m5": ch_m5,
+            "change_1h": ch_1h,
+            "change_24h": ch_24h,
+            "url": pair.get("url"),
+            "gate": "moonshot" if moonshot else "standard",
+        }
+
+    except Exception as e:
+        print("❌ analyze_pair failed:", e)
+        return None
 def detect_alpha_tokens() -> list[dict]:
     candidates = get_top_candidates(limit=RADAR_LIMIT) or []
     found: list[dict] = []
