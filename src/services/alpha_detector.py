@@ -151,6 +151,18 @@ def analyze_pair(pair: dict) -> dict | None:
     except Exception as e:
         print("❌ analyze_pair failed:", e)
         return None
+def format_alert(token: dict) -> str:
+    return (
+        f"🚨 *MirrorX Alpha Detected*\n\n"
+        f"🪙 {token['symbol']}\n"
+        f"💧 Liquidity: ${int(token['liquidity']):,}\n"
+        f"📊 Vol 1H: ${int(token['volume_1h']):,}\n"
+        f"📈 5m: {token['change_m5']:.2f}%\n"
+        f"📈 1H: {token['change_1h']:.2f}%\n"
+        f"📈 24H: {token['change_24h']:.2f}%\n\n"
+        f"⚡ Mode: {token['gate'].upper()}\n"
+        f"🔗 {token['url']}"
+    ) 
 def detect_alpha_tokens() -> list[dict]:
     candidates = get_top_candidates(limit=RADAR_LIMIT) or []
     found: list[dict] = []
