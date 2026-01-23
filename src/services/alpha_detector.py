@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from src.services.telegram_alerts import send_telegram_message
 from src.services.dex_radar import get_top_candidates
-from src.services.movers_store import record_snapshot, compute_acceleration
+from src.services.movers_store import record_snapshot
 from src.services.alerts_store import can_alert
 
 try:
@@ -22,7 +22,7 @@ DEX_BASE = "https://api.dexscreener.com"
 DEX_TOKEN_PAIRS = f"{DEX_BASE}/latest/dex/tokens/"
 
 # ----------------------------
-# Gates (UNCHANGED)
+# Thresholds
 # ----------------------------
 MIN_LIQ_USD = float(os.getenv("ALPHA_MIN_LIQ_USD", "30000"))
 MIN_VOL_1H = float(os.getenv("ALPHA_MIN_VOL_1H", "150000"))
@@ -45,18 +45,18 @@ DEX_429_BACKOFF_SECONDS = float(os.getenv("ALPHA_DEX_429_BACKOFF_SECONDS", "2.25
 DEX_429_MAX_RETRIES = int(os.getenv("ALPHA_DEX_429_MAX_RETRIES", "2"))
 
 
-def _now_iso() -> str:
+def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _safe_float(x, default=0.0) -> float:
+def _safe_float(x, default=0.0):
     try:
         return float(x)
     except Exception:
         return default
 
 
-def _sleep_jitter(base: float) -> None:
+def _sleep_jitter(base: float):
     time.sleep(max(0.0, base + random.uniform(-0.03, 0.06)))
 
 
@@ -74,12 +74,12 @@ def _get_json_with_backoff(url: str):
     return None
 
 
-def fetch_pairs_by_address(token_address: str) -> list[dict]:
+def fetch_pairs_by_address(token_address: str):
     data = _get_json_with_backoff(f"{DEX_TOKEN_PAIRS}{token_address}")
     return data.get("pairs", []) if isinstance(data, dict) else []
 
 
-def _best_pair_combo(pairs: list[dict]) -> dict:
+def _best_pair_combo(pairs):
     if not pairs:
         return {}
 
@@ -88,18 +88,21 @@ def _best_pair_combo(pairs: list[dict]) -> dict:
         v1 = _safe_float((p.get("volume") or {}).get("h1"))
         ch5 = _safe_float((p.get("priceChange") or {}).get("m5"))
         ch1 = _safe_float((p.get("priceChange") or {}).get("h1"))
+
         s = ch5 * 1.45 + ch1 * 0.85 + (liq / 20000) + (v1 / 50000)
+
         if liq < 4000 and (ch5 > 80 or ch1 > 200):
             s *= 0.25
         return s
 
     return sorted(pairs, key=score, reverse=True)[0]
 
-# -------------------------------------------------
-# Alpha Analysis + Alert Formatting (SAFE DEFAULTS)
-# -------------------------------------------------
 
-def analyze_pair(pair: dict) -> dict | None:
+# =================================================
+# Alpha Analysis
+# =================================================
+
+def analyze_pair(pair):
     try:
         base = pair.get("baseToken") or {}
 
@@ -111,31 +114,29 @@ def analyze_pair(pair: dict) -> dict | None:
         ch_1h = _safe_float((pair.get("priceChange") or {}).get("h1"))
         ch_24h = _safe_float((pair.get("priceChange") or {}).get("h24"))
 
-        # -------------------------
-        # HARD GATES
-        # -------------------------
+        # ---------- Acceleration Tier ----------
+        if ch_m5 > 300 and vol_1h > 150_000:
+            tier = "parabolic"
+        elif ch_m5 > 120 or ch_1h > 250:
+            tier = "moonshot"
+        elif ch_m5 > 40 or ch_1h > 80:
+            tier = "standard"
+        else:
+            tier = "watch"
+
+        # ---------- Hard filters ----------
         if liquidity < MIN_LIQ_USD:
             return None
 
-        if vol_1h < MIN_VOL_1H or vol_24h < MIN_VOL_24H:
+        if vol_1h < MIN_VOL_1H and vol_24h < MIN_VOL_24H:
             return None
 
-        # -------------------------
-        # MOONSHOT OVERRIDE
-        # -------------------------
-        moonshot = (
-            MOONSHOT_ENABLE
-            and liquidity >= MOONSHOT_MIN_LIQ_USD
-            and vol_1h >= MOONSHOT_MIN_VOL_1H
-            and vol_24h >= MOONSHOT_MIN_VOL_24H
-            and (ch_m5 >= MOONSHOT_CH_M5 or ch_1h >= MOONSHOT_CH_1H)
-        )
-
-        if not moonshot and max(ch_m5, ch_1h, ch_24h) < MIN_MOVE_ANY:
+        if max(ch_m5, ch_1h, ch_24h) < MIN_MOVE_ANY:
             return None
 
         return {
             "address": base.get("address"),
+            "mint": base.get("address"),
             "symbol": base.get("symbol", "UNKNOWN"),
             "price": _safe_float(pair.get("priceUsd")),
             "liquidity": liquidity,
@@ -145,27 +146,41 @@ def analyze_pair(pair: dict) -> dict | None:
             "change_1h": ch_1h,
             "change_24h": ch_24h,
             "url": pair.get("url"),
-            "gate": "moonshot" if moonshot else "standard",
+            "gate": tier,
+            "acceleration": tier,
         }
 
     except Exception as e:
         print("❌ analyze_pair failed:", e)
         return None
+
+
+# =================================================
+# Alert Formatting
+# =================================================
+
 def format_alert(token: dict) -> str:
     return (
         f"🚨 *MirrorX Alpha Detected*\n\n"
         f"🪙 {token['symbol']}\n"
+        f"🔑 Mint: `{token['mint']}`\n"
         f"💧 Liquidity: ${int(token['liquidity']):,}\n"
         f"📊 Vol 1H: ${int(token['volume_1h']):,}\n"
         f"📈 5m: {token['change_m5']:.2f}%\n"
         f"📈 1H: {token['change_1h']:.2f}%\n"
         f"📈 24H: {token['change_24h']:.2f}%\n\n"
-        f"⚡ Mode: {token['gate'].upper()}\n"
+        f"⚡ Tier: {token['gate'].upper()}\n"
         f"🔗 {token['url']}"
-    ) 
-def detect_alpha_tokens() -> list[dict]:
+    )
+
+
+# =================================================
+# Detection Loop
+# =================================================
+
+def detect_alpha_tokens():
     candidates = get_top_candidates(limit=RADAR_LIMIT) or []
-    found: list[dict] = []
+    found = []
 
     for c in candidates:
         addr = c.get("address")
@@ -177,10 +192,7 @@ def detect_alpha_tokens() -> list[dict]:
         if not best:
             continue
 
-        # =====================================================
-        # ✅ SMALL, SAFE ADDITION: PRE-GATE SNAPSHOT
-        # (builds acceleration history, no logic change)
-        # =====================================================
+        # Snapshot (pre-gate)
         try:
             base = best.get("baseToken") or {}
             record_snapshot("alpha_pre_gate", {
@@ -199,13 +211,11 @@ def detect_alpha_tokens() -> list[dict]:
             })
         except Exception:
             pass
-        # =====================================================
 
         token = analyze_pair(best)
         if not token:
             continue
 
-        # Always record gated snapshot
         record_snapshot("alpha_detector", {
             "address": token["address"],
             "symbol": token["symbol"],
@@ -216,7 +226,6 @@ def detect_alpha_tokens() -> list[dict]:
             "changeM5": token["change_m5"],
             "changeH1": token["change_1h"],
             "changeH24": token["change_24h"],
-            "url": token["url"],
             "gate": token["gate"],
             "ts": _now_iso(),
         })
