@@ -162,7 +162,7 @@ def analyze_pair(pair):
 def format_alert(token: dict) -> str:
     return (
         f"🚨 *MirrorX Alpha Detected*\n\n"
-        f"🪙 {token['symbol']}\n"
+        f"🔑 Mint: {token['mint']}\n"
         f"🔑 Mint: {token['mint']}\n"
         f"💧 Liquidity: ${int(token['liquidity']):,}\n"
         f"📊 Vol 1H: ${int(token['volume_1h']):,}\n"
