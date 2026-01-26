@@ -1,4 +1,3 @@
-# src/services/alpha_detector.py
 from __future__ import annotations
 
 import os
@@ -18,17 +17,18 @@ except Exception:
     def add_alert(_source: str, _payload: dict):
         return
 
+
+# ============================
+# CONFIG
+# ============================
+
 DEX_BASE = "https://api.dexscreener.com"
 DEX_TOKEN_PAIRS = f"{DEX_BASE}/latest/dex/tokens/"
 
-# ----------------------------
-# Thresholds
-# ----------------------------
 MIN_LIQ_USD = float(os.getenv("ALPHA_MIN_LIQ_USD", "30000"))
 MIN_VOL_1H = float(os.getenv("ALPHA_MIN_VOL_1H", "150000"))
 MIN_VOL_24H = float(os.getenv("ALPHA_MIN_VOL_24H", "750000"))
 
-MOONSHOT_ENABLE = os.getenv("ALPHA_MOONSHOT_ENABLE", "1") == "1"
 MOONSHOT_MIN_LIQ_USD = float(os.getenv("ALPHA_MOONSHOT_MIN_LIQ_USD", "8000"))
 MOONSHOT_MIN_VOL_1H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_1H", "25000"))
 MOONSHOT_MIN_VOL_24H = float(os.getenv("ALPHA_MOONSHOT_MIN_VOL_24H", "150000"))
@@ -45,6 +45,10 @@ DEX_429_BACKOFF_SECONDS = float(os.getenv("ALPHA_DEX_429_BACKOFF_SECONDS", "2.25
 DEX_429_MAX_RETRIES = int(os.getenv("ALPHA_DEX_429_MAX_RETRIES", "2"))
 
 
+# ============================
+# UTILITIES
+# ============================
+
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
@@ -56,11 +60,11 @@ def _safe_float(x, default=0.0):
         return default
 
 
-def _sleep_jitter(base: float):
+def _sleep_jitter(base):
     time.sleep(max(0.0, base + random.uniform(-0.03, 0.06)))
 
 
-def _get_json_with_backoff(url: str):
+def _get_json_with_backoff(url):
     for attempt in range(DEX_429_MAX_RETRIES + 1):
         try:
             r = requests.get(url, timeout=DEX_HTTP_TIMEOUT)
@@ -74,33 +78,74 @@ def _get_json_with_backoff(url: str):
     return None
 
 
-def fetch_pairs_by_address(token_address: str):
+def fetch_pairs_by_address(token_address):
     data = _get_json_with_backoff(f"{DEX_TOKEN_PAIRS}{token_address}")
     return data.get("pairs", []) if isinstance(data, dict) else []
 
 
-def _best_pair_combo(pairs):
-    if not pairs:
-        return {}
+# ============================
+# INTELLIGENCE LAYERS
+# ============================
 
-    def score(p):
-        liq = _safe_float((p.get("liquidity") or {}).get("usd"))
-        v1 = _safe_float((p.get("volume") or {}).get("h1"))
-        ch5 = _safe_float((p.get("priceChange") or {}).get("m5"))
-        ch1 = _safe_float((p.get("priceChange") or {}).get("h1"))
-
-        s = ch5 * 1.45 + ch1 * 0.85 + (liq / 20000) + (v1 / 50000)
-
-        if liq < 4000 and (ch5 > 80 or ch1 > 200):
-            s *= 0.25
-        return s
-
-    return sorted(pairs, key=score, reverse=True)[0]
+def compute_confidence(t):
+    score = 0
+    if t["volume_1h"] > 300_000:
+        score += 25
+    if t["liquidity"] > 100_000:
+        score += 25
+    if t["change_1h"] > 40:
+        score += 25
+    if t["change_m5"] > 15:
+        score += 25
+    return min(score, 100)
 
 
-# =================================================
-# Alpha Analysis
-# =================================================
+def classify_stage(t):
+    if t["volume_1h"] < 50_000 and t["change_m5"] > 40:
+        return "EARLY"
+    if t["volume_1h"] < 300_000:
+        return "MID"
+    return "LATE"
+
+
+def detect_reversal(t):
+    if t["change_m5"] < 0 and t["change_1h"] > 60:
+        return "Possible Reversal"
+    if t["volume_1h"] < 20000:
+        return "Weak Volume"
+    return "OK"
+
+
+def is_elite(t):
+    return (
+        t["confidence"] >= 80 and
+        t["stage"] in ("EARLY", "MID") and
+        t["volume_1h"] > 250_000
+    )
+
+
+def should_suppress(t):
+    if t["confidence"] < 35:
+        return True
+    if t["stage"] == "LATE" and t["change_1h"] > 120:
+        return True
+    return False
+
+
+def generate_reasoning(t):
+    reasons = []
+    if t["confidence"] > 80:
+        reasons.append("Strong momentum + volume")
+    if t["stage"] == "EARLY":
+        reasons.append("Early-stage breakout")
+    if t["reversal"] != "OK":
+        reasons.append("Reversal risk detected")
+    return " | ".join(reasons)
+
+
+# ============================
+# CORE ANALYSIS
+# ============================
 
 def analyze_pair(pair):
     try:
@@ -114,27 +159,14 @@ def analyze_pair(pair):
         ch_1h = _safe_float((pair.get("priceChange") or {}).get("h1"))
         ch_24h = _safe_float((pair.get("priceChange") or {}).get("h24"))
 
-        # ---------- Acceleration Tier ----------
-        if ch_m5 > 300 and vol_1h > 150_000:
-            tier = "parabolic"
-        elif ch_m5 > 120 or ch_1h > 250:
-            tier = "moonshot"
-        elif ch_m5 > 40 or ch_1h > 80:
-            tier = "standard"
-        else:
-            tier = "watch"
-
-        # ---------- Hard filters ----------
         if liquidity < MIN_LIQ_USD:
             return None
-
         if vol_1h < MIN_VOL_1H and vol_24h < MIN_VOL_24H:
             return None
-
         if max(ch_m5, ch_1h, ch_24h) < MIN_MOVE_ANY:
             return None
 
-        return {
+        token = {
             "address": base.get("address"),
             "mint": base.get("address"),
             "symbol": base.get("symbol", "UNKNOWN"),
@@ -146,41 +178,48 @@ def analyze_pair(pair):
             "change_1h": ch_1h,
             "change_24h": ch_24h,
             "url": pair.get("url"),
-            "gate": tier,
-            "acceleration": tier,
         }
 
-    except Exception as e:
-        print("❌ analyze_pair failed:", e)
+        token["confidence"] = compute_confidence(token)
+        token["stage"] = classify_stage(token)
+        token["reversal"] = detect_reversal(token)
+        token["elite"] = is_elite(token)
+
+        return token
+
+    except Exception:
         return None
 
 
-# =================================================
-# Alert Formatting
-# =================================================
+# ============================
+# ALERT FORMAT
+# ============================
 
-def format_alert(token: dict) -> str:
+def format_alert(t):
     return (
-        f"🚨 *MirrorX Alpha Detected*\n\n"
-        f"🔑 Mint: {token['mint']}\n"
-        f"🔑 Mint: {token['mint']}\n"
-        f"💧 Liquidity: ${int(token['liquidity']):,}\n"
-        f"📊 Vol 1H: ${int(token['volume_1h']):,}\n"
-        f"📈 5m: {token['change_m5']:.2f}%\n"
-        f"📈 1H: {token['change_1h']:.2f}%\n"
-        f"📈 24H: {token['change_24h']:.2f}%\n\n"
-        f"⚡ Tier: {token['gate'].upper()}\n"
-        f"🔗 {token['url']}"
+        f"🚨 *MirrorX Alpha Alert*\n\n"
+        f"🪙 {t['symbol']}\n"
+        f"🔑 Mint: {t['mint']}\n"
+        f"💧 Liquidity: ${int(t['liquidity']):,}\n"
+        f"📊 Vol 1H: ${int(t['volume_1h']):,}\n"
+        f"📈 5m: {t['change_m5']:.2f}%\n"
+        f"📈 1H: {t['change_1h']:.2f}%\n"
+        f"📈 24H: {t['change_24h']:.2f}%\n\n"
+        f"🧠 Confidence: {t['confidence']}/100\n"
+        f"⏱ Stage: {t['stage']}\n"
+        f"🔁 Risk: {t['reversal']}\n"
+        f"🔥 Elite: {'YES' if t['elite'] else 'NO'}\n\n"
+        f"🔗 {t['url']}"
     )
 
 
-# =================================================
-# Detection Loop
-# =================================================
+# ============================
+# PIPELINE
+# ============================
 
 def detect_alpha_tokens():
     candidates = get_top_candidates(limit=RADAR_LIMIT) or []
-    found = []
+    results = []
 
     for c in candidates:
         addr = c.get("address")
@@ -188,63 +227,34 @@ def detect_alpha_tokens():
             continue
 
         pairs = fetch_pairs_by_address(addr)
-        best = _best_pair_combo(pairs)
-        if not best:
+        if not pairs:
             continue
 
-        # Snapshot (pre-gate)
-        try:
-            base = best.get("baseToken") or {}
-            record_snapshot("alpha_pre_gate", {
-                "address": base.get("address"),
-                "symbol": base.get("symbol"),
-                "priceUsd": _safe_float(best.get("priceUsd")),
-                "liquidityUsd": _safe_float((best.get("liquidity") or {}).get("usd")),
-                "volumeH1": _safe_float((best.get("volume") or {}).get("h1")),
-                "volumeH24": _safe_float((best.get("volume") or {}).get("h24")),
-                "changeM5": _safe_float((best.get("priceChange") or {}).get("m5")),
-                "changeH1": _safe_float((best.get("priceChange") or {}).get("h1")),
-                "changeH24": _safe_float((best.get("priceChange") or {}).get("h24")),
-                "url": best.get("url"),
-                "ts": _now_iso(),
-                "stage": "pre_gate",
-            })
-        except Exception:
-            pass
+        best = sorted(pairs, key=lambda p: _safe_float((p.get("priceChange") or {}).get("h1")), reverse=True)[0]
 
         token = analyze_pair(best)
         if not token:
             continue
 
+        if should_suppress(token):
+            continue
+
         record_snapshot("alpha_detector", {
-            "address": token["address"],
-            "symbol": token["symbol"],
-            "priceUsd": token["price"],
-            "liquidityUsd": token["liquidity"],
-            "volumeH1": token["volume_1h"],
-            "volumeH24": token["volume_24h"],
-            "changeM5": token["change_m5"],
-            "changeH1": token["change_1h"],
-            "changeH24": token["change_24h"],
-            "gate": token["gate"],
-            "ts": _now_iso(),
+            **token,
+            "ts": _now_iso()
         })
 
-        found.append(token)
+        results.append(token)
         _sleep_jitter(DEX_FETCH_PAUSE_SECONDS)
 
-    return sorted(found, key=lambda t: t["change_1h"], reverse=True)
+    return sorted(results, key=lambda t: t["confidence"], reverse=True)
 
 
 def push_alpha_alerts():
     detected = detect_alpha_tokens()
-    if not detected:
-        return
 
     for token in detected[:MAX_ALERTS]:
-        strength = _safe_float(token.get("change_1h"), 0)
-
-        if not can_alert(token.get("address"), strength):
+        if not can_alert(token["address"], token["change_1h"]):
             continue
 
         msg = format_alert(token)
@@ -253,6 +263,9 @@ def push_alpha_alerts():
             add_alert("alpha_detector", {
                 "address": token["address"],
                 "symbol": token["symbol"],
+                "confidence": token["confidence"],
+                "stage": token["stage"],
+                "elite": token["elite"],
                 "message": msg,
             })
         except Exception:
