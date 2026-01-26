@@ -18,9 +18,9 @@ except Exception:
         return
 
 
-# ============================
+# ============================================================
 # CONFIG
-# ============================
+# ============================================================
 
 DEX_BASE = "https://api.dexscreener.com"
 DEX_TOKEN_PAIRS = f"{DEX_BASE}/latest/dex/tokens/"
@@ -45,9 +45,9 @@ DEX_429_BACKOFF_SECONDS = float(os.getenv("ALPHA_DEX_429_BACKOFF_SECONDS", "2.25
 DEX_429_MAX_RETRIES = int(os.getenv("ALPHA_DEX_429_MAX_RETRIES", "2"))
 
 
-# ============================
-# UTILITIES
-# ============================
+# ============================================================
+# HELPERS
+# ============================================================
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -83,20 +83,16 @@ def fetch_pairs_by_address(token_address):
     return data.get("pairs", []) if isinstance(data, dict) else []
 
 
-# ============================
-# INTELLIGENCE LAYERS
-# ============================
+# ============================================================
+# INTELLIGENCE CORE
+# ============================================================
 
 def compute_confidence(t):
     score = 0
-    if t["volume_1h"] > 300_000:
-        score += 25
-    if t["liquidity"] > 100_000:
-        score += 25
-    if t["change_1h"] > 40:
-        score += 25
-    if t["change_m5"] > 15:
-        score += 25
+    if t["volume_1h"] > 300_000: score += 25
+    if t["liquidity"] > 100_000: score += 25
+    if t["change_1h"] > 40: score += 25
+    if t["change_m5"] > 15: score += 25
     return min(score, 100)
 
 
@@ -111,16 +107,16 @@ def classify_stage(t):
 def detect_reversal(t):
     if t["change_m5"] < 0 and t["change_1h"] > 60:
         return "Possible Reversal"
-    if t["volume_1h"] < 20000:
+    if t["volume_1h"] < 20_000:
         return "Weak Volume"
     return "OK"
 
 
 def is_elite(t):
     return (
-        t["confidence"] >= 80 and
-        t["stage"] in ("EARLY", "MID") and
-        t["volume_1h"] > 250_000
+        t["confidence"] >= 80
+        and t["stage"] in ("EARLY", "MID")
+        and t["volume_1h"] > 250_000
     )
 
 
@@ -132,20 +128,9 @@ def should_suppress(t):
     return False
 
 
-def generate_reasoning(t):
-    reasons = []
-    if t["confidence"] > 80:
-        reasons.append("Strong momentum + volume")
-    if t["stage"] == "EARLY":
-        reasons.append("Early-stage breakout")
-    if t["reversal"] != "OK":
-        reasons.append("Reversal risk detected")
-    return " | ".join(reasons)
-
-
-# ============================
-# CORE ANALYSIS
-# ============================
+# ============================================================
+# ANALYSIS ENGINE
+# ============================================================
 
 def analyze_pair(pair):
     try:
@@ -191,9 +176,9 @@ def analyze_pair(pair):
         return None
 
 
-# ============================
+# ============================================================
 # ALERT FORMAT
-# ============================
+# ============================================================
 
 def format_alert(t):
     return (
@@ -213,9 +198,9 @@ def format_alert(t):
     )
 
 
-# ============================
+# ============================================================
 # PIPELINE
-# ============================
+# ============================================================
 
 def detect_alpha_tokens():
     candidates = get_top_candidates(limit=RADAR_LIMIT) or []
@@ -230,7 +215,11 @@ def detect_alpha_tokens():
         if not pairs:
             continue
 
-        best = sorted(pairs, key=lambda p: _safe_float((p.get("priceChange") or {}).get("h1")), reverse=True)[0]
+        best = sorted(
+            pairs,
+            key=lambda p: _safe_float((p.get("priceChange") or {}).get("h1")),
+            reverse=True
+        )[0]
 
         token = analyze_pair(best)
         if not token:
