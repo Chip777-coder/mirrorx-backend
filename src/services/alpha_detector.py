@@ -11,7 +11,11 @@ from src.services.telegram_alerts import send_telegram_message
 from src.services.dex_radar import get_top_candidates
 from src.services.movers_store import record_snapshot
 from src.services.alerts_store import can_alert
-
+from src.services.market_intelligence import (
+    apply_confidence_decay,
+    detect_market_regime,
+    adjust_confidence_by_regime
+)
 try:
     from src.services.alerts_store import add_alert
 except Exception:
@@ -154,7 +158,8 @@ def format_alert(t):
         f"🚨 *MirrorX Alert*\n\n"
         f"🪙 {t['symbol']}\n"
         f"🔑 Mint: {t['mint']}\n"
-        f"📊 Confidence: {t['confidence']}/100\n"
+        f"🧠 Market Regime: {regime.upper()}\n"
+        f"📊 Confidence: {token['confidence']:.2f}/100\n"
         f"⚡ Tier: {t['tier'].upper()}\n\n"
         f"💧 Liquidity: ${int(t['liquidity']):,}\n"
         f"📈 5m: {t['change_m5']:.2f}%\n"
@@ -194,7 +199,19 @@ def detect_alpha_tokens():
 # ============================================================
 # DISPATCH
 # ============================================================
+# Determine current market regime
+regime = detect_market_regime(detected)
 
+# Apply confidence decay + regime adjustment
+token["confidence"] = apply_confidence_decay(
+    token["confidence"],
+    token.get("ts", "")
+)
+
+token["confidence"] = adjust_confidence_by_regime(
+    token["confidence"],
+    regime
+)
 def push_alpha_alerts():
     tokens = detect_alpha_tokens()
     if not tokens:
