@@ -1,18 +1,14 @@
 # src/services/chart_render.py
 """
-Chart Render (PNG bytes)
-------------------------
-Renders a simple price+volume chart (PNG bytes) for Telegram.
+Chart Render
+------------
+Renders a simple price + volume chart PNG from Polygon aggs data.
 
-Inputs:
-- ticker (str)
-- aggs_desc: list[dict] newest-first Polygon agg bars (fields: c, v, etc.)
-- minutes: candle minutes (e.g., 5)
+Input:
+  - aggs_desc: newest-first list of OHLCV dicts (Polygon "results")
 
-Returns:
-- bytes (PNG) or b"" if rendering not possible.
-
-Safe-fails if matplotlib isn't available.
+Output:
+  - PNG bytes
 """
 
 from __future__ import annotations
@@ -36,7 +32,9 @@ def render_price_volume_chart_png_bytes(
     minutes: int = 5,
 ) -> bytes:
     """
-    aggs_desc must be newest-first (Polygon sort=desc).
+    Minimal chart:
+      - Top: closes line
+      - Bottom: volume bars
     """
     if not aggs_desc or len(aggs_desc) < 10:
         return b""
@@ -48,23 +46,20 @@ def render_price_volume_chart_png_bytes(
     except Exception:
         return b""
 
-    # plot oldest-first
+    # Convert newest-first into oldest-first for plotting
     bars = list(reversed(aggs_desc))
 
     closes = [_safe_float(b.get("c"), 0.0) for b in bars]
     vols = [_safe_float(b.get("v"), 0.0) for b in bars]
 
-    if max(closes) <= 0:
-        return b""
-
     fig = plt.figure(figsize=(10, 5))
-    ax1 = fig.add_subplot(2, 1, 1)
-    ax2 = fig.add_subplot(2, 1, 2)
 
+    ax1 = fig.add_subplot(2, 1, 1)
     ax1.plot(closes)
-    ax1.set_title(f"{(ticker or '').upper()} • {int(minutes)}m • Recent")
+    ax1.set_title(f"{ticker} • {minutes}m (recent)")
     ax1.grid(True, alpha=0.2)
 
+    ax2 = fig.add_subplot(2, 1, 2)
     ax2.bar(range(len(vols)), vols)
     ax2.grid(True, alpha=0.2)
 
