@@ -19,6 +19,7 @@ ELITE ADD-ONS (SAFE / EDUCATIONAL):
 ✅ Acute volume surge trigger (volume shock)
 ✅ Performance tracking hooks (simulated)
 ✅ Paper-trading mode (simulated entry/TP/SL; no real trades)
+✅ Optional chart image (PNG) via chart_render.py
 
 Educational tooling only. Not trade advice.
 """
@@ -26,16 +27,18 @@ Educational tooling only. Not trade advice.
 from __future__ import annotations
 
 import os
-import io
 import time
-import math
-import random
 import requests
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from src.services.telegram_alerts import send_telegram_message
 from src.services.movers_store import record_snapshot, compute_acceleration
+
+# NEW: Modular radar + chart rendering
+from src.services.stock_radar import discover_candidates, enrich_ticker
+from src.services.chart_render import render_price_volume_chart_png_bytes
+
 
 # Optional alert store (safe if file doesn't exist)
 try:
@@ -73,9 +76,9 @@ MOONSHOT_MIN_PRICE = float(os.getenv("STOCK_MOONSHOT_MIN_PRICE", "0.03"))
 
 # --- Market Gainers Mode
 MARKET_GAINERS_ENABLE = os.getenv("STOCK_MARKET_GAINERS_ENABLE", "1") == "1"
-MARKET_MIN_PCT_5M = float(os.getenv("STOCK_MARKET_MIN_PCT_CHANGE_5M", "5.0"))    # 5m >= 5%
-MARKET_MIN_PCT_1H = float(os.getenv("STOCK_MARKET_MIN_PCT_CHANGE_1H", "10.0"))   # 1h >= 10%
-MARKET_MIN_PCT_DAY = float(os.getenv("STOCK_MARKET_MIN_PCT_CHANGE_DAY", "15.0")) # day >= 15%
+MARKET_MIN_PCT_5M = float(os.getenv("STOCK_MARKET_MIN_PCT_CHANGE_5M", "5.0"))
+MARKET_MIN_PCT_1H = float(os.getenv("STOCK_MARKET_MIN_PCT_CHANGE_1H", "10.0"))
+MARKET_MIN_PCT_DAY = float(os.getenv("STOCK_MARKET_MIN_PCT_CHANGE_DAY", "15.0"))
 MARKET_MIN_DOLLAR_VOL_1H = float(os.getenv("STOCK_MARKET_MIN_DOLLAR_VOL_1H", "150000"))
 MARKET_MIN_DOLLAR_VOL_DAY = float(os.getenv("STOCK_MARKET_MIN_DOLLAR_VOL_DAY", "750000"))
 MARKET_MAX_ALERTS = int(os.getenv("STOCK_MARKET_MAX_ALERTS", "5"))
@@ -85,13 +88,6 @@ MAX_ALERTS = int(os.getenv("STOCK_MAX_ALERTS", "5"))
 
 # Discovery scan size
 RADAR_LIMIT = int(os.getenv("STOCK_RADAR_LIMIT", "60"))
-
-# API selection
-STOCK_DATA_PROVIDER = os.getenv("STOCK_DATA_PROVIDER", "polygon").lower().strip()
-
-# Polygon
-POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "").strip()
-POLYGON_BASE = "https://api.polygon.io"
 
 # Throttling
 HTTP_TIMEOUT = int(os.getenv("STOCK_HTTP_TIMEOUT", "12"))
@@ -104,7 +100,7 @@ VOL_SHOCK_RATIO_MIN = float(os.getenv("STOCK_VOL_SHOCK_RATIO_MIN", "2.0"))  # la
 
 # ELITE: Reversal/exhaustion heuristics
 EXHAUSTION_ENABLE = os.getenv("STOCK_EXHAUSTION_ENABLE", "1") == "1"
-EXHAUSTION_M5_EXTEND = float(os.getenv("STOCK_EXHAUSTION_M5_EXTEND", "8.0"))  # 5m change >= 8% considered "extended" for many stocks
+EXHAUSTION_M5_EXTEND = float(os.getenv("STOCK_EXHAUSTION_M5_EXTEND", "8.0"))
 
 # ELITE: Confidence score shaping
 CONF_BASELINE_DV_DAY = float(os.getenv("STOCK_CONF_BASELINE_DV_DAY", "1500000"))
@@ -112,13 +108,13 @@ CONF_BASELINE_DV_1H = float(os.getenv("STOCK_CONF_BASELINE_DV_1H", "250000"))
 
 # ELITE: Chart pics (optional)
 CHART_ENABLE = os.getenv("STOCK_CHART_ENABLE", "1") == "1"
-CHART_AGG_MINUTES = int(os.getenv("STOCK_CHART_AGG_MINUTES", "5"))      # 5m candles
-CHART_BARS = int(os.getenv("STOCK_CHART_BARS", "78"))                   # ~1 day of 5m bars (6.5h*12=78)
+CHART_AGG_MINUTES = int(os.getenv("STOCK_CHART_AGG_MINUTES", "5"))      # matches stock_radar default
+CHART_BARS = int(os.getenv("STOCK_CHART_BARS", "78"))
 
 # ELITE: Paper trading (simulated)
 PAPER_ENABLE = os.getenv("STOCK_PAPER_ENABLE", "1") == "1"
-PAPER_R_MULT_TP = float(os.getenv("STOCK_PAPER_R_MULT_TP", "2.0"))      # TP = entry + R*2
-PAPER_R_MULT_SL = float(os.getenv("STOCK_PAPER_R_MULT_SL", "1.0"))      # SL = entry - R*1
+PAPER_R_MULT_TP = float(os.getenv("STOCK_PAPER_R_MULT_TP", "2.0"))
+PAPER_R_MULT_SL = float(os.getenv("STOCK_PAPER_R_MULT_SL", "1.0"))
 
 
 # ============================================================
@@ -135,11 +131,6 @@ def _safe_float(x: Any, default: float = 0.0) -> float:
         return float(x)
     except Exception:
         return default
-
-def _http_get(url: str, params: Optional[dict] = None) -> Any:
-    r = requests.get(url, params=params or {}, timeout=HTTP_TIMEOUT)
-    r.raise_for_status()
-    return r.json()
 
 def _pct_change(new: float, old: float) -> float:
     if old == 0:
@@ -159,10 +150,6 @@ def _fmt_money(x: float) -> str:
     return f"${x:,.0f}"
 
 def _send_telegram_direct(text: str, chat_id: str, parse_mode: str = "HTML") -> None:
-    """
-    Direct Telegram send to a specific chat_id using MirrorStock bot token if set,
-    otherwise fallback to default TELEGRAM_TOKEN.
-    """
     token = MIRRORSTOCK_TELEGRAM_TOKEN or DEFAULT_TELEGRAM_TOKEN
     if not token or not chat_id:
         return
@@ -191,7 +178,7 @@ def _send_telegram_photo_direct(
         files = {"photo": ("chart.png", image_bytes)}
         data = {
             "chat_id": chat_id,
-            "caption": caption[:900],  # keep captions reasonable
+            "caption": (caption or "")[:900],
             "parse_mode": parse_mode,
         }
         requests.post(url, data=data, files=files, timeout=HTTP_TIMEOUT)
@@ -200,249 +187,59 @@ def _send_telegram_photo_direct(
 
 
 # ============================================================
-# Discovery (Polygon)
+# ELITE signal derivation (from stock_radar enrichment output)
 # ============================================================
 
-def discover_candidates(limit: int = 60) -> List[Dict[str, Any]]:
-    limit = max(1, int(limit))
-    if STOCK_DATA_PROVIDER == "polygon":
-        return _discover_polygon(limit=limit)
-    return []
+def _derive_elite_from_aggs(x: Dict[str, Any]) -> None:
+    """
+    Uses x["_aggs_5m_desc"] (newest-first) from stock_radar.enrich_ticker()
+    to compute:
+      - vol_surge_ratio_15m (last 15m vs prior 45m)
+      - micro_reversal_hint
+      - range_proxy (ATR-ish proxy)
+    """
+    bars = x.get("_aggs_5m_desc") or []
+    if not isinstance(bars, list) or len(bars) < 12:
+        x["vol_surge_ratio_15m"] = 0.0
+        x["micro_reversal_hint"] = False
+        x["range_proxy"] = 0.0
+        return
 
-def _discover_polygon(limit: int = 60) -> List[Dict[str, Any]]:
-    if not POLYGON_API_KEY:
-        return []
+    # volume surge: first 3 bars vs next 9 bars
+    v_last_15 = sum(_safe_float(r.get("v"), 0.0) for r in bars[:3])
+    v_prev_45 = sum(_safe_float(r.get("v"), 0.0) for r in bars[3:12])
+    x["vol_surge_ratio_15m"] = (v_last_15 / v_prev_45) if v_prev_45 > 0 else 0.0
 
-    out: List[Dict[str, Any]] = []
-
-    # 1) gainers endpoint
-    try:
-        url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/gainers"
-        data = _http_get(url, params={"apiKey": POLYGON_API_KEY})
-        tickers = data.get("tickers") if isinstance(data, dict) else None
-        if isinstance(tickers, list):
-            for t in tickers:
-                tk = (t.get("ticker") or "").upper().strip()
-                if tk:
-                    out.append({"ticker": tk, "source": "gainers", "raw": t})
-    except Exception:
-        pass
-
-    # 2) fallback: tickers snapshot and sort by day % change
-    if not out:
-        try:
-            url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers"
-            data = _http_get(url, params={"apiKey": POLYGON_API_KEY})
-            tickers = data.get("tickers") if isinstance(data, dict) else None
-            if isinstance(tickers, list):
-                scored = []
-                for t in tickers:
-                    tk = (t.get("ticker") or "").upper().strip()
-                    day = t.get("day") or {}
-                    prev = t.get("prevDay") or {}
-                    c = _safe_float(day.get("c"), 0.0)
-                    pc = _safe_float(prev.get("c"), 0.0)
-                    ch = _pct_change(c, pc)
-                    if tk:
-                        scored.append((ch, tk, t))
-                scored.sort(key=lambda x: x[0], reverse=True)
-                for ch, tk, raw in scored[: max(10, limit)]:
-                    out.append({"ticker": tk, "source": "snapshot_movers", "raw": raw})
-        except Exception:
-            pass
-
-    # dedupe + trim
-    seen = set()
-    deduped = []
-    for c in out:
-        tk = c.get("ticker")
-        if not tk or tk in seen:
-            continue
-        seen.add(tk)
-        deduped.append(c)
-        if len(deduped) >= limit:
-            break
-    return deduped
-
-
-# ============================================================
-# Enrichment (Polygon)
-# ============================================================
-
-def enrich_ticker(ticker: str) -> Dict[str, Any]:
-    ticker = (ticker or "").upper().strip()
-    if not ticker:
-        return {}
-    if STOCK_DATA_PROVIDER == "polygon":
-        return _enrich_polygon(ticker)
-    return {"ticker": ticker}
-
-def _polygon_aggs(
-    ticker: str,
-    minutes: int,
-    limit: int,
-) -> List[Dict[str, Any]]:
-    if not POLYGON_API_KEY:
-        return []
-    try:
-        to = datetime.utcnow().strftime("%Y-%m-%d")
-        frm = to
-        url = f"{POLYGON_BASE}/v2/aggs/ticker/{ticker}/range/{minutes}/minute/{frm}/{to}"
-        aggs = _http_get(url, params={
-            "adjusted": "true",
-            "sort": "desc",
-            "limit": int(limit),
-            "apiKey": POLYGON_API_KEY
-        })
-        results = aggs.get("results") if isinstance(aggs, dict) else None
-        return results if isinstance(results, list) else []
-    except Exception:
-        return []
-
-def _enrich_polygon(ticker: str) -> Dict[str, Any]:
-    if not POLYGON_API_KEY:
-        return {}
-
-    out: Dict[str, Any] = {
-        "ticker": ticker,
-        "url": f"https://www.tradingview.com/symbols/{ticker}/",
-    }
-
-    # snapshot for price/day/volume
-    try:
-        url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"
-        snap = _http_get(url, params={"apiKey": POLYGON_API_KEY})
-        data = snap.get("ticker") if isinstance(snap, dict) else None
-        if isinstance(data, dict):
-            day = data.get("day") or {}
-            prev = data.get("prevDay") or {}
-
-            price = _safe_float(day.get("c"), 0.0)
-            prev_close = _safe_float(prev.get("c"), 0.0)
-            day_change = _pct_change(price, prev_close)
-
-            vol_day = _safe_float(day.get("v"), 0.0)
-            dollar_vol_day = vol_day * price
-
-            out.update({
-                "price": price,
-                "day_change_pct": day_change,
-                "vol_day": vol_day,
-                "dollar_vol_day": dollar_vol_day,
-            })
-    except Exception:
-        pass
-
-    time.sleep(SLEEP_BETWEEN_CALLS)
-
-    # intraday aggs for 5m + 1h change + 1h volume + elite signals
-    # IMPORTANT FIX: compute true 5m change (last bar vs previous bar),
-    # and true 1h change (last bar vs bar 12 bars ago), not 150-min drift.
-    results = _polygon_aggs(ticker, minutes=5, limit=max(30, CHART_BARS))
-    if results:
-        # results are newest-first (desc)
-        # True 5m change: bar0 close vs bar1 close
-        if len(results) >= 2:
-            c0 = _safe_float(results[0].get("c"), 0.0)
-            c1 = _safe_float(results[1].get("c"), 0.0)
-            out["change_5m"] = _pct_change(c0, c1)
-
-        # True 1h change: bar0 close vs bar12 close (12*5m = 60m)
-        if len(results) >= 13:
-            c0 = _safe_float(results[0].get("c"), 0.0)
-            c12 = _safe_float(results[12].get("c"), 0.0)
-            out["change_1h"] = _pct_change(c0, c12)
-
-        # 1h volume (sum first 12 bars)
-        vol_1h = sum(_safe_float(r.get("v"), 0.0) for r in results[:12])
-        price = _safe_float(out.get("price"), 0.0)
-        out["vol_1h"] = vol_1h
-        out["dollar_vol_1h"] = vol_1h * price
-
-        # --- ELITE: volume shock ratio (last 15m vs prior 45m)
-        # last 15m = first 3 bars, prior 45m = next 9 bars
-        v_last_15 = sum(_safe_float(r.get("v"), 0.0) for r in results[:3])
-        v_prev_45 = sum(_safe_float(r.get("v"), 0.0) for r in results[3:12])
-        out["vol_surge_ratio_15m"] = (v_last_15 / v_prev_45) if v_prev_45 > 0 else 0.0
-
-        # --- ELITE: micro reversal warning (extended + last close down)
-        # detect if latest close < previous close while 5m change is large (chasing risk)
-        if len(results) >= 3:
-            c0 = _safe_float(results[0].get("c"), 0.0)
-            c1 = _safe_float(results[1].get("c"), 0.0)
-            c2 = _safe_float(results[2].get("c"), 0.0)
-            down_tick = (c0 < c1) and (c1 > c2)  # small "pop then tick down" shape
-            out["micro_reversal_hint"] = bool(down_tick)
-
-        # --- ELITE: ATR-ish range proxy for paper TP/SL
-        # Use mean(High-Low) over last 20 bars
-        ranges = []
-        for r in results[:20]:
-            h = _safe_float(r.get("h"), 0.0)
-            l = _safe_float(r.get("l"), 0.0)
-            if h > 0 and l > 0 and h >= l:
-                ranges.append(h - l)
-        out["range_proxy"] = (sum(ranges) / len(ranges)) if ranges else 0.0
-
-        # Keep chart bars for optional chart rendering
-        out["_aggs_5m_desc"] = results[:CHART_BARS]
-
-    # heuristic RVOL (kept for penny gates)
-    try:
-        dv_day = _safe_float(out.get("dollar_vol_day"), 0.0)
-        baseline = float(os.getenv("STOCK_RVOL_BASELINE_DOLLAR_VOL", "750000"))
-        out["rel_vol"] = dv_day / baseline if baseline > 0 else 0.0
-    except Exception:
-        out["rel_vol"] = 0.0
-
-    # ELITE: exhaustion detection
-    if EXHAUSTION_ENABLE:
-        ch5 = _safe_float(out.get("change_5m"), 0.0)
-        chd = _safe_float(out.get("day_change_pct"), 0.0)
-        dv1 = _safe_float(out.get("dollar_vol_1h"), 0.0)
-        micro_rev = bool(out.get("micro_reversal_hint", False))
-        extended = (ch5 >= EXHAUSTION_M5_EXTEND) or (chd >= 80.0)
-        # Heuristic: extended + micro reversal OR extended + weak $ participation
-        out["exhaustion"] = bool(extended and (micro_rev or dv1 < CONF_BASELINE_DV_1H * 0.75))
+    # micro reversal hint: "pop then tick down" shape
+    if len(bars) >= 3:
+        c0 = _safe_float(bars[0].get("c"), 0.0)
+        c1 = _safe_float(bars[1].get("c"), 0.0)
+        c2 = _safe_float(bars[2].get("c"), 0.0)
+        x["micro_reversal_hint"] = bool((c0 < c1) and (c1 > c2))
     else:
-        out["exhaustion"] = False
+        x["micro_reversal_hint"] = False
 
-    # ELITE: reversal warning
-    # Heuristic: exhaustion OR (very high day% + 5m flip down)
-    out["reversal_warning"] = bool(out.get("exhaustion", False) or out.get("micro_reversal_hint", False))
+    # range proxy: mean(high-low) over last 20 bars
+    ranges = []
+    for r in bars[:20]:
+        h = _safe_float(r.get("h"), 0.0)
+        l = _safe_float(r.get("l"), 0.0)
+        if h > 0 and l > 0 and h >= l:
+            ranges.append(h - l)
+    x["range_proxy"] = (sum(ranges) / len(ranges)) if ranges else 0.0
 
-    # ELITE: Early/Mid/Late tag
-    out["stage_tag"] = _stage_tag(out)
-
-    # ELITE: Volume shock trigger
-    out["volume_shock"] = _volume_shock(out)
-
-    # ELITE: Confidence score 0–100
-    out["confidence"] = _confidence_score(out)
-
-    return out
-
-
-# ============================================================
-# ELITE SIGNALS
-# ============================================================
 
 def _stage_tag(x: Dict[str, Any]) -> str:
-    """
-    Early/Mid/Late: heuristic tag for "how far into the move" it looks.
-    """
     chd = _safe_float(x.get("day_change_pct"), 0.0)
     ch1 = _safe_float(x.get("change_1h"), 0.0)
     ch5 = _safe_float(x.get("change_5m"), 0.0)
 
-    # Early: day still small, but intraday impulse exists
     if chd < 20.0 and (ch1 >= 8.0 or ch5 >= 2.5):
         return "EARLY"
-    # Late: day very extended
     if chd >= 80.0:
         return "LATE"
-    # Mid: everything else that is moving
     return "MID"
+
 
 def _volume_shock(x: Dict[str, Any]) -> bool:
     if not VOL_SHOCK_ENABLE:
@@ -451,11 +248,8 @@ def _volume_shock(x: Dict[str, Any]) -> bool:
     ratio = _safe_float(x.get("vol_surge_ratio_15m"), 0.0)
     return bool(dv1h >= VOL_SHOCK_MIN_DV1H and ratio >= VOL_SHOCK_RATIO_MIN)
 
+
 def _confidence_score(x: Dict[str, Any]) -> float:
-    """
-    0–100 score: emphasizes *participation + sustained momentum*,
-    penalizes exhaustion/reversal hints.
-    """
     ch5 = max(_safe_float(x.get("change_5m"), 0.0), 0.0)
     ch1 = max(_safe_float(x.get("change_1h"), 0.0), 0.0)
     chd = max(_safe_float(x.get("day_change_pct"), 0.0), 0.0)
@@ -467,16 +261,13 @@ def _confidence_score(x: Dict[str, Any]) -> float:
     surge = max(_safe_float(x.get("vol_surge_ratio_15m"), 0.0), 0.0)
     shock = 1.0 if bool(x.get("volume_shock", False)) else 0.0
 
-    # Normalize participation
     dv1_n = _clamp(dv1 / max(CONF_BASELINE_DV_1H, 1.0), 0.0, 6.0)
     dvd_n = _clamp(dvd / max(CONF_BASELINE_DV_DAY, 1.0), 0.0, 6.0)
     rvol_n = _clamp(rvol, 0.0, 10.0)
 
-    # Momentum blend (favor 1h > 5m to reduce pure spike-chasing)
     mom = (ch1 * 0.55) + (ch5 * 0.25) + (chd * 0.20)
-    mom_n = _clamp(mom / 25.0, 0.0, 6.0)  # scale
+    mom_n = _clamp(mom / 25.0, 0.0, 6.0)
 
-    # Surge factor
     surge_n = _clamp(surge / 2.0, 0.0, 4.0)
 
     raw = (
@@ -488,13 +279,34 @@ def _confidence_score(x: Dict[str, Any]) -> float:
         shock * 6.0
     )
 
-    # Penalties
     if bool(x.get("exhaustion", False)):
         raw *= 0.78
     if bool(x.get("reversal_warning", False)):
         raw *= 0.88
 
     return float(_clamp(raw, 0.0, 100.0))
+
+
+def _apply_elite_signals(x: Dict[str, Any]) -> Dict[str, Any]:
+    _derive_elite_from_aggs(x)
+
+    # exhaustion detection
+    if EXHAUSTION_ENABLE:
+        ch5 = _safe_float(x.get("change_5m"), 0.0)
+        chd = _safe_float(x.get("day_change_pct"), 0.0)
+        dv1 = _safe_float(x.get("dollar_vol_1h"), 0.0)
+        micro_rev = bool(x.get("micro_reversal_hint", False))
+        extended = (ch5 >= EXHAUSTION_M5_EXTEND) or (chd >= 80.0)
+        x["exhaustion"] = bool(extended and (micro_rev or dv1 < CONF_BASELINE_DV_1H * 0.75))
+    else:
+        x["exhaustion"] = False
+
+    x["reversal_warning"] = bool(x.get("exhaustion", False) or x.get("micro_reversal_hint", False))
+    x["stage_tag"] = _stage_tag(x)
+    x["volume_shock"] = _volume_shock(x)
+    x["confidence"] = _confidence_score(x)
+
+    return x
 
 
 # ============================================================
@@ -541,10 +353,6 @@ def moonshot_exception(x: Dict[str, Any]) -> bool:
     return (chd >= MOONSHOT_MIN_PCT_DAY and dvday >= MOONSHOT_MIN_DOLLAR_VOL_DAY)
 
 def passes_market_gainer_gates(x: Dict[str, Any]) -> bool:
-    """
-    Market-wide gain signals (not penny restricted).
-    Targets 5–10%+ pops with participation.
-    """
     price = _safe_float(x.get("price"), 0.0)
     if price <= 0:
         return False
@@ -567,13 +375,11 @@ def passes_market_gainer_gates(x: Dict[str, Any]) -> bool:
 
 
 # ============================================================
-# Scoring + Paper-trade plan + Chart
+# Scoring + Paper-trade plan
 # ============================================================
 
 def rocket_score_penny(x: Dict[str, Any]) -> float:
-    # prefer confidence for sorting (but keep your original shape bias)
     conf = _safe_float(x.get("confidence"), 0.0)
-
     ch5 = max(_safe_float(x.get("change_5m"), 0.0), 0.0)
     ch1 = max(_safe_float(x.get("change_1h"), 0.0), 0.0)
     chd = max(_safe_float(x.get("day_change_pct"), 0.0), 0.0)
@@ -589,7 +395,6 @@ def rocket_score_penny(x: Dict[str, Any]) -> float:
     score += min(dv1 / 500_000.0, 8.0) * 6.0
     score += min(dvd / 2_000_000.0, 8.0) * 5.0
     score += min(rvol, 10.0) * 3.0
-    # small bonus for volume shock
     if bool(x.get("volume_shock", False)):
         score += 12.0
     return float(score)
@@ -602,17 +407,12 @@ def score_market_gainer(x: Dict[str, Any]) -> float:
     return (conf * 1.3) + (ch1 * 0.35) + (dv1 / 400_000.0) + (shock * 8.0)
 
 def _paper_trade_plan(x: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Simulated trade plan (NOT advice): entry + TP/SL based on a simple range proxy.
-    """
     entry = _safe_float(x.get("price"), 0.0)
     rp = _safe_float(x.get("range_proxy"), 0.0)
     if entry <= 0:
         return {}
 
-    # If range proxy missing, approximate small % of price
     R = rp if rp > 0 else max(entry * 0.02, 0.01)
-
     tp = entry + (R * PAPER_R_MULT_TP)
     sl = max(0.0, entry - (R * PAPER_R_MULT_SL))
 
@@ -622,48 +422,6 @@ def _paper_trade_plan(x: Dict[str, Any]) -> Dict[str, Any]:
         "paper_sl": sl,
         "paper_r": R,
     }
-
-def _render_chart_png_bytes(ticker: str, x: Dict[str, Any]) -> bytes:
-    """
-    Optional chart renderer. Safe-fails if matplotlib not available.
-    Uses Polygon 5m OHLCV data already stored in x["_aggs_5m_desc"].
-    """
-    if not CHART_ENABLE:
-        return b""
-    try:
-        import matplotlib  # type: ignore
-        matplotlib.use("Agg")  # headless
-        import matplotlib.pyplot as plt  # type: ignore
-    except Exception:
-        return b""
-
-    bars = x.get("_aggs_5m_desc") or []
-    if not isinstance(bars, list) or len(bars) < 10:
-        return b""
-
-    # Convert newest-first into oldest-first for plotting
-    bars_rev = list(reversed(bars))
-
-    closes = [_safe_float(b.get("c"), 0.0) for b in bars_rev]
-    vols = [_safe_float(b.get("v"), 0.0) for b in bars_rev]
-
-    # Create a simple price + volume plot (minimal, fast)
-    fig = plt.figure(figsize=(10, 5))
-    ax1 = fig.add_subplot(2, 1, 1)
-    ax2 = fig.add_subplot(2, 1, 2)
-
-    ax1.plot(closes)
-    ax1.set_title(f"{ticker} • {CHART_AGG_MINUTES}m (recent)")
-    ax1.grid(True, alpha=0.2)
-
-    ax2.bar(range(len(vols)), vols)
-    ax2.grid(True, alpha=0.2)
-
-    buf = io.BytesIO()
-    fig.tight_layout()
-    fig.savefig(buf, format="png", dpi=130)
-    plt.close(fig)
-    return buf.getvalue()
 
 
 # ============================================================
@@ -786,6 +544,8 @@ def detect_penny_rockets(limit: int = RADAR_LIMIT) -> List[Dict[str, Any]]:
         if not enriched:
             continue
 
+        enriched = _apply_elite_signals(enriched)
+
         ok = passes_penny_gates(enriched) or moonshot_exception(enriched)
         if not ok:
             continue
@@ -794,7 +554,6 @@ def detect_penny_rockets(limit: int = RADAR_LIMIT) -> List[Dict[str, Any]]:
             "address": tk,
             "symbol": tk,
             "priceUsd": _safe_float(enriched.get("price"), 0.0),
-            "liquidityUsd": 0.0,
             "volumeH1": _safe_float(enriched.get("dollar_vol_1h"), 0.0),
             "volumeH24": _safe_float(enriched.get("dollar_vol_day"), 0.0),
             "changeM5": _safe_float(enriched.get("change_5m"), 0.0),
@@ -835,6 +594,8 @@ def detect_market_gainers(limit: int = RADAR_LIMIT) -> List[Dict[str, Any]]:
         if not enriched:
             continue
 
+        enriched = _apply_elite_signals(enriched)
+
         if not passes_market_gainer_gates(enriched):
             continue
 
@@ -842,7 +603,6 @@ def detect_market_gainers(limit: int = RADAR_LIMIT) -> List[Dict[str, Any]]:
             "address": tk,
             "symbol": tk,
             "priceUsd": _safe_float(enriched.get("price"), 0.0),
-            "liquidityUsd": 0.0,
             "volumeH1": _safe_float(enriched.get("dollar_vol_1h"), 0.0),
             "volumeH24": _safe_float(enriched.get("dollar_vol_day"), 0.0),
             "changeM5": _safe_float(enriched.get("change_5m"), 0.0),
@@ -870,14 +630,12 @@ def _dispatch_alert_with_optional_chart(msg: str, ticker: str, enriched: Dict[st
     Sends message and (optionally) chart image.
     Uses MIRRORSTOCK_CHAT_ID routing if configured.
     """
-    # optional chart image
-    if CHART_ENABLE:
-        img = _render_chart_png_bytes(ticker, enriched)
-        if img and MIRRORSTOCK_CHAT_ID:
+    if CHART_ENABLE and MIRRORSTOCK_CHAT_ID:
+        bars = enriched.get("_aggs_5m_desc") or []
+        img = render_price_volume_chart_png_bytes(ticker=ticker, aggs_desc=bars, minutes=CHART_AGG_MINUTES)
+        if img:
             _send_telegram_photo_direct(img, caption=msg, chat_id=MIRRORSTOCK_CHAT_ID, parse_mode="HTML")
             return
-        # if no chat_id, fall through to text message (existing send_telegram_message)
-        # (we avoid trying to sendPhoto without a target chat_id)
 
     # text message fallback
     if MIRRORSTOCK_CHAT_ID:
@@ -887,12 +645,6 @@ def _dispatch_alert_with_optional_chart(msg: str, ticker: str, enriched: Dict[st
 
 
 def push_mirrorstock_alerts():
-    """
-    Runs:
-      1) Penny rockets (strict)
-      2) Market gainers (5–10%+ signals)
-    Routes alerts to MIRRORSTOCK_TELEGRAM_CHAT_ID using MIRRORSTOCK_TELEGRAM_TOKEN if provided.
-    """
     print("[SCHEDULER] Running MirrorStock Detector...")
 
     penny = detect_penny_rockets(limit=RADAR_LIMIT)
@@ -905,7 +657,7 @@ def push_mirrorstock_alerts():
     sent = 0
     seen = set()
 
-    # 1) send penny rockets first
+    # 1) penny rockets first
     for x in penny[:MAX_ALERTS]:
         tk = (x.get("ticker") or "").upper().strip()
         if not tk or tk in seen:
@@ -914,7 +666,7 @@ def push_mirrorstock_alerts():
 
         msg = format_penny_alert(x)
 
-        # Performance tracking hooks (simulated)
+        # simulated performance tracking hook
         if PAPER_ENABLE:
             paper = _paper_trade_plan(x)
             if paper:
@@ -940,7 +692,6 @@ def push_mirrorstock_alerts():
             pass
 
         _dispatch_alert_with_optional_chart(msg, tk, x)
-
         sent += 1
         print(f"[MirrorStock] Sent penny alert for {tk}")
 
@@ -953,7 +704,6 @@ def push_mirrorstock_alerts():
 
         msg = format_market_alert(x)
 
-        # Performance tracking hooks (simulated)
         if PAPER_ENABLE:
             paper = _paper_trade_plan(x)
             if paper:
@@ -979,7 +729,6 @@ def push_mirrorstock_alerts():
             pass
 
         _dispatch_alert_with_optional_chart(msg, tk, x)
-
         sent += 1
         print(f"[MirrorStock] Sent market alert for {tk}")
 
@@ -988,4 +737,3 @@ def push_mirrorstock_alerts():
 
 if __name__ == "__main__":
     push_mirrorstock_alerts()
-```0
