@@ -28,11 +28,10 @@ from __future__ import annotations
 
 import os
 import time
-import requests
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from src.services.telegram_alerts import send_telegram_message
+from src.services.telegram_alerts import send_telegram_message, send_telegram_photo
 from src.services.movers_store import record_snapshot, compute_acceleration
 
 # NEW: Modular radar + chart rendering
@@ -51,11 +50,6 @@ except Exception:
 # ============================================================
 # Config (env-driven)
 # ============================================================
-
-# MirrorStock Telegram routing (separate bot/channel supported)
-MIRRORSTOCK_CHAT_ID = os.getenv("MIRRORSTOCK_TELEGRAM_CHAT_ID", "").strip()
-MIRRORSTOCK_TELEGRAM_TOKEN = os.getenv("MIRRORSTOCK_TELEGRAM_TOKEN", "").strip()
-DEFAULT_TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
 
 # --- Penny stock "focus band"
 PENNY_MAX_PRICE = float(os.getenv("STOCK_PENNY_MAX_PRICE", "5.00"))
@@ -90,7 +84,6 @@ MAX_ALERTS = int(os.getenv("STOCK_MAX_ALERTS", "5"))
 RADAR_LIMIT = int(os.getenv("STOCK_RADAR_LIMIT", "60"))
 
 # Throttling
-HTTP_TIMEOUT = int(os.getenv("STOCK_HTTP_TIMEOUT", "12"))
 SLEEP_BETWEEN_CALLS = float(os.getenv("STOCK_SLEEP_BETWEEN_CALLS", "0.10"))
 
 # ELITE: Acute volume surge trigger
@@ -108,8 +101,7 @@ CONF_BASELINE_DV_1H = float(os.getenv("STOCK_CONF_BASELINE_DV_1H", "250000"))
 
 # ELITE: Chart pics (optional)
 CHART_ENABLE = os.getenv("STOCK_CHART_ENABLE", "1") == "1"
-CHART_AGG_MINUTES = int(os.getenv("STOCK_CHART_AGG_MINUTES", "5"))      # matches stock_radar default
-CHART_BARS = int(os.getenv("STOCK_CHART_BARS", "78"))
+CHART_AGG_MINUTES = int(os.getenv("STOCK_CHART_AGG_MINUTES", "5"))  # matches stock_radar default
 
 # ELITE: Paper trading (simulated)
 PAPER_ENABLE = os.getenv("STOCK_PAPER_ENABLE", "1") == "1"
@@ -132,11 +124,6 @@ def _safe_float(x: Any, default: float = 0.0) -> float:
     except Exception:
         return default
 
-def _pct_change(new: float, old: float) -> float:
-    if old == 0:
-        return 0.0
-    return ((new - old) / old) * 100.0
-
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
@@ -148,42 +135,6 @@ def _fmt_money(x: float) -> str:
     if x >= 1_000:
         return f"${x/1_000:.1f}K"
     return f"${x:,.0f}"
-
-def _send_telegram_direct(text: str, chat_id: str, parse_mode: str = "HTML") -> None:
-    token = MIRRORSTOCK_TELEGRAM_TOKEN or DEFAULT_TELEGRAM_TOKEN
-    if not token or not chat_id:
-        return
-    try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        requests.post(url, json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": parse_mode,
-            "disable_web_page_preview": False,
-        }, timeout=HTTP_TIMEOUT)
-    except Exception:
-        return
-
-def _send_telegram_photo_direct(
-    image_bytes: bytes,
-    caption: str,
-    chat_id: str,
-    parse_mode: str = "HTML",
-) -> None:
-    token = MIRRORSTOCK_TELEGRAM_TOKEN or DEFAULT_TELEGRAM_TOKEN
-    if not token or not chat_id or not image_bytes:
-        return
-    try:
-        url = f"https://api.telegram.org/bot{token}/sendPhoto"
-        files = {"photo": ("chart.png", image_bytes)}
-        data = {
-            "chat_id": chat_id,
-            "caption": (caption or "")[:900],
-            "parse_mode": parse_mode,
-        }
-        requests.post(url, data=data, files=files, timeout=HTTP_TIMEOUT)
-    except Exception:
-        return
 
 
 # ============================================================
@@ -205,12 +156,10 @@ def _derive_elite_from_aggs(x: Dict[str, Any]) -> None:
         x["range_proxy"] = 0.0
         return
 
-    # volume surge: first 3 bars vs next 9 bars
     v_last_15 = sum(_safe_float(r.get("v"), 0.0) for r in bars[:3])
     v_prev_45 = sum(_safe_float(r.get("v"), 0.0) for r in bars[3:12])
     x["vol_surge_ratio_15m"] = (v_last_15 / v_prev_45) if v_prev_45 > 0 else 0.0
 
-    # micro reversal hint: "pop then tick down" shape
     if len(bars) >= 3:
         c0 = _safe_float(bars[0].get("c"), 0.0)
         c1 = _safe_float(bars[1].get("c"), 0.0)
@@ -219,7 +168,6 @@ def _derive_elite_from_aggs(x: Dict[str, Any]) -> None:
     else:
         x["micro_reversal_hint"] = False
 
-    # range proxy: mean(high-low) over last 20 bars
     ranges = []
     for r in bars[:20]:
         h = _safe_float(r.get("h"), 0.0)
@@ -290,7 +238,6 @@ def _confidence_score(x: Dict[str, Any]) -> float:
 def _apply_elite_signals(x: Dict[str, Any]) -> Dict[str, Any]:
     _derive_elite_from_aggs(x)
 
-    # exhaustion detection
     if EXHAUSTION_ENABLE:
         ch5 = _safe_float(x.get("change_5m"), 0.0)
         chd = _safe_float(x.get("day_change_pct"), 0.0)
@@ -305,7 +252,6 @@ def _apply_elite_signals(x: Dict[str, Any]) -> Dict[str, Any]:
     x["stage_tag"] = _stage_tag(x)
     x["volume_shock"] = _volume_shock(x)
     x["confidence"] = _confidence_score(x)
-
     return x
 
 
@@ -318,9 +264,7 @@ def _is_penny_band(price: float) -> bool:
 
 def passes_penny_gates(x: Dict[str, Any]) -> bool:
     price = _safe_float(x.get("price"), 0.0)
-    if price <= 0:
-        return False
-    if not _is_penny_band(price):
+    if price <= 0 or not _is_penny_band(price):
         return False
 
     dv1h = _safe_float(x.get("dollar_vol_1h"), 0.0)
@@ -347,7 +291,6 @@ def moonshot_exception(x: Dict[str, Any]) -> bool:
     price = _safe_float(x.get("price"), 0.0)
     chd = _safe_float(x.get("day_change_pct"), 0.0)
     dvday = _safe_float(x.get("dollar_vol_day"), 0.0)
-
     if price < MOONSHOT_MIN_PRICE:
         return False
     return (chd >= MOONSHOT_MIN_PCT_DAY and dvday >= MOONSHOT_MIN_DOLLAR_VOL_DAY)
@@ -375,7 +318,7 @@ def passes_market_gainer_gates(x: Dict[str, Any]) -> bool:
 
 
 # ============================================================
-# Scoring + Paper-trade plan
+# Scoring + Paper-trade plan (simulated)
 # ============================================================
 
 def rocket_score_penny(x: Dict[str, Any]) -> float:
@@ -416,12 +359,7 @@ def _paper_trade_plan(x: Dict[str, Any]) -> Dict[str, Any]:
     tp = entry + (R * PAPER_R_MULT_TP)
     sl = max(0.0, entry - (R * PAPER_R_MULT_SL))
 
-    return {
-        "paper_entry": entry,
-        "paper_tp": tp,
-        "paper_sl": sl,
-        "paper_r": R,
-    }
+    return {"paper_entry": entry, "paper_tp": tp, "paper_sl": sl, "paper_r": R}
 
 
 # ============================================================
@@ -446,11 +384,9 @@ def _elite_lines(x: Dict[str, Any]) -> str:
 def format_penny_alert(x: Dict[str, Any]) -> str:
     ticker = x.get("ticker", "UNKNOWN")
     price = _safe_float(x.get("price"), 0.0)
-
     ch5 = _safe_float(x.get("change_5m"), 0.0)
     ch1 = _safe_float(x.get("change_1h"), 0.0)
     chd = _safe_float(x.get("day_change_pct"), 0.0)
-
     dv1 = _safe_float(x.get("dollar_vol_1h"), 0.0)
     dvd = _safe_float(x.get("dollar_vol_day"), 0.0)
     rvol = _safe_float(x.get("rel_vol"), 0.0)
@@ -499,6 +435,7 @@ def format_market_alert(x: Dict[str, Any]) -> str:
 
     accel = compute_acceleration(ticker)
     accel_hint = accel.get("accel_hint", "n/a")
+
     url = x.get("url") or f"https://www.tradingview.com/symbols/{ticker}/"
 
     paper = _paper_trade_plan(x) if PAPER_ENABLE else {}
@@ -628,20 +565,18 @@ def detect_market_gainers(limit: int = RADAR_LIMIT) -> List[Dict[str, Any]]:
 def _dispatch_alert_with_optional_chart(msg: str, ticker: str, enriched: Dict[str, Any]) -> None:
     """
     Sends message and (optionally) chart image.
-    Uses MIRRORSTOCK_CHAT_ID routing if configured.
+    IMPORTANT: routes through Telegram channel="mirrorstock" (no default).
     """
-    if CHART_ENABLE and MIRRORSTOCK_CHAT_ID:
+    if CHART_ENABLE:
         bars = enriched.get("_aggs_5m_desc") or []
         img = render_price_volume_chart_png_bytes(ticker=ticker, aggs_desc=bars, minutes=CHART_AGG_MINUTES)
         if img:
-            _send_telegram_photo_direct(img, caption=msg, chat_id=MIRRORSTOCK_CHAT_ID, parse_mode="HTML")
-            return
+            ok = send_telegram_photo(img, caption=msg, channel="mirrorstock")
+            if ok:
+                return
 
-    # text message fallback
-    if MIRRORSTOCK_CHAT_ID:
-        _send_telegram_direct(msg, chat_id=MIRRORSTOCK_CHAT_ID, parse_mode="HTML")
-    else:
-        send_telegram_message(msg)
+    # text fallback (still MirrorStock channel)
+    send_telegram_message(msg, channel="mirrorstock")
 
 
 def push_mirrorstock_alerts():
